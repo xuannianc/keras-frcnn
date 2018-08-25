@@ -2,6 +2,8 @@ import os
 import cv2
 import xml.etree.ElementTree as ET
 import os.path as osp
+from log import logger
+import json
 
 
 def get_annotation_data(dataset_dir, visualize=False):
@@ -27,7 +29,7 @@ def get_annotation_data(dataset_dir, visualize=False):
                 for line in f:
                     trainval_files.append(line.strip() + '.jpg')
         except Exception as e:
-            print(e)
+            logger.error(e)
 
         annotation_paths = [os.path.join(annotations_dir, annotation_file) for annotation_file in
                             os.listdir(annotations_dir)]
@@ -79,6 +81,17 @@ def get_annotation_data(dataset_dir, visualize=False):
                         cv2.imshow('image', image)
                         cv2.waitKey(0)
             except Exception as e:
-                print(e)
+                logger.exception(e)
                 continue
     return all_annotation_data, classes_count, class_name_idx_mapping
+
+
+def serialize():
+    dataset_dir = '/home/adam/.keras/datasets/VOCdevkit'
+    all_annotation_data, classes_count, class_name_idx_mapping = get_annotation_data(dataset_dir)
+    json.dump(all_annotation_data, open('annotation_data.json', 'w'))
+    json.dump(classes_count, open('classes_count.json', 'w'))
+    json.dump(class_name_idx_mapping, open('class_name_idx_mapping.json', 'w'))
+
+
+serialize()
