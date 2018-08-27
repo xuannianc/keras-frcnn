@@ -157,7 +157,7 @@ optimizer_classifier = Adam(lr=1e-5)
 model_rpn.compile(optimizer=optimizer, loss=[losses.rpn_class_loss(num_anchors), losses.rpn_regr_loss(num_anchors)])
 model_rcnn.compile(optimizer=optimizer_classifier,
                    loss=[losses.rcnn_class_loss, losses.rcnn_regr_loss(len(classes_count) - 1)],
-                   metrics={'rcnn_class_{}'.format(len(classes_count)): 'accuracy'})
+                   metrics={'rcnn_class':'accuracy'})
 model.compile(optimizer='sgd', loss='mae')
 
 num_epochs = int(options.num_epochs)
