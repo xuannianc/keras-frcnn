@@ -41,12 +41,6 @@ def base_net(input_tensor=None):
         else:
             image_input = input_tensor
 
-    if K.image_dim_ordering() == 'tf':
-        # 用于 batch normalization
-        bn_axis = 3
-    else:
-        bn_axis = 1
-
     # Block 1
     x = Conv2D(64, (3, 3), activation='relu', padding='same', name='block1_conv1')(image_input)
     x = Conv2D(64, (3, 3), activation='relu', padding='same', name='block1_conv2')(x)
@@ -81,8 +75,8 @@ def base_net(input_tensor=None):
 def rpn(base_layers, num_anchors):
     x = Conv2D(512, (3, 3), padding='same', activation='relu', kernel_initializer='normal', name='rpn_conv1')(
         base_layers)
-    rpn_class = Conv2D(num_anchors, (1, 1), activation='sigmoid', kernel_initializer='uniform', name='rpn_out_class')(x)
-    rpn_regr = Conv2D(num_anchors * 4, (1, 1), activation='linear', kernel_initializer='zero', name='rpn_out_regress')(x)
+    rpn_class = Conv2D(num_anchors, (1, 1), activation='sigmoid', kernel_initializer='uniform', name='rpn_class')(x)
+    rpn_regr = Conv2D(num_anchors * 4, (1, 1), activation='linear', kernel_initializer='zero', name='rpn_regr')(x)
     return [rpn_class, rpn_regr]
 
 
@@ -105,8 +99,8 @@ def rcnn(base_layers, roi_input, num_rois, num_classes=21):
     out = TimeDistributed(Dense(4096, activation='relu', name='fc2'))(out)
     out = TimeDistributed(Dropout(0.5))(out)
     out_class = TimeDistributed(Dense(num_classes, activation='softmax', kernel_initializer='zero'),
-                                name='rcnn_class_{}'.format(num_classes))(out)
+                                name='rcnn_class')(out)
     # note: no regression target for bg class
     out_regr = TimeDistributed(Dense(4 * (num_classes - 1), activation='linear', kernel_initializer='zero'),
-                               name='rcnn_regr_{}'.format(num_classes))(out)
+                               name='rcnn_regr')(out)
     return [out_class, out_regr]

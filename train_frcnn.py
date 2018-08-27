@@ -15,6 +15,7 @@ from keras_frcnn import losses as losses
 import keras_frcnn.roi_helpers as roi_helpers
 from log import logger
 from keras.utils import generic_utils
+import json
 
 sys.setrecursionlimit(40000)
 
@@ -35,6 +36,7 @@ parser.add_option("--vf", dest="vertical_flips", help="Augment with vertical fli
 parser.add_option("--rot", "--rot_90", dest="rot_90",
                   help="Augment with 90 degree rotations in training. (Default=false).",
                   action="store_true", default=False)
+parser.add_option("--image_min_side", type="int", dest="image_min_side", help="image min side to resize", default=800)
 parser.add_option("--num_epochs", type="int", dest="num_epochs", help="Number of epochs.", default=2000)
 parser.add_option("--config_filename", dest="config_filename",
                   help="Location to store all the metadata related to the training (to be used when testing).",
@@ -53,6 +55,7 @@ if options.parser == 'pascal_voc':
 elif options.parser == 'simple':
     from keras_frcnn.simple_parser import get_data
 else:
+    logger.exception("Command line option parser must be one of 'pascal_voc' or 'simple'")
     raise ValueError("Command line option parser must be one of 'pascal_voc' or 'simple'")
 
 # pass the settings from the command line, and persist them in the config object
@@ -62,6 +65,7 @@ C.use_horizontal_flips = bool(options.horizontal_flips)
 C.use_vertical_flips = bool(options.vertical_flips)
 C.rot_90 = bool(options.rot_90)
 C.num_rois = int(options.num_rois)
+C.image_min_side = options.image_min_side
 
 if options.network == 'vgg':
     C.network = 'vgg'
@@ -70,7 +74,7 @@ elif options.network == 'resnet50':
     from keras_frcnn import resnet as nn
     C.network = 'resnet50'
 else:
-    print('Not a valid model')
+    logger.exception('Not a valid model')
     raise ValueError
 
 # check if output weight path was passed via command line
@@ -86,7 +90,10 @@ else:
     # set the path to weights based on backend and model
     C.base_net_weights_path = nn.get_weight_path()
 
-all_annotation_data, classes_count, class_name_idx_mapping = get_annotation_data(DATASET_DIR)
+# all_annotation_data, classes_count, class_name_idx_mapping = get_annotation_data(DATASET_DIR)
+all_annotation_data = json.load(open('annotation_data.json'))
+classes_count = json.load(open('classes_count.json'))
+class_name_idx_mapping = json.load(open('class_name_idx_mapping.json'))
 
 if 'bg' not in classes_count:
     classes_count['bg'] = 0
@@ -94,8 +101,8 @@ if 'bg' not in classes_count:
 
 C.class_name_idx_mapping = class_name_idx_mapping
 
-pprint.pprint('class_count={}'.format(classes_count))
-print('Num of classes (including bg) = {}'.format(len(classes_count)))
+logger.debug('class_count={}'.format(classes_count))
+logger.info('Num of classes (including bg) = {}'.format(len(classes_count)))
 
 config_output_filename = options.config_filename
 
@@ -105,15 +112,15 @@ with open(config_output_filename, 'wb') as config_f:
         config_output_filename))
 
 random.shuffle(all_annotation_data)
-num_images = len(all_annotation_data)
 
 train_annotation_data = [annotation_data for annotation_data in all_annotation_data if
                          annotation_data['imageset'] == 'train']
 val_annotation_data = [annotation_data for annotation_data in all_annotation_data if
                        annotation_data['imageset'] == 'val']
 
-print('Num of train samples {}'.format(len(train_annotation_data)))
-print('Num of val samples {}'.format(len(val_annotation_data)))
+logger.info('Num of samples {}'.format(len(all_annotation_data)))
+logger.info('Num of train samples {}'.format(len(train_annotation_data)))
+logger.info('Num of val samples {}'.format(len(val_annotation_data)))
 
 train_data_gen = data_generators.get_anchor_gt(train_annotation_data, classes_count, C, nn.get_feature_map_size,
                                                mode='train')

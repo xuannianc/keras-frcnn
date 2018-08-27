@@ -94,4 +94,4 @@ def serialize():
     json.dump(class_name_idx_mapping, open('class_name_idx_mapping.json', 'w'))
 
 
-serialize()
+# serialize()

@@ -18,7 +18,7 @@ def rpn_regr_loss(num_anchors):
         # y_true[:,:,:,:4*num_anchors] 作为乘式因子就是想忽略 invalid 这部分的 loss
         diff = y_true[:, :, :, 4 * num_anchors:] - y_pred
         abs_diff = K.abs(diff)
-        # less_equal 逐元素比较 a<b
+        # less_equal 逐元素比较 a<=b, less 逐元素比较 a<b
         bool_diff = K.cast(K.less_equal(abs_diff, 1.0), tf.float32)
         # smooth_L1_loss = 0.5 * x * x if |x| < 1 else |x| - 0.5
         return lambda_rpn_regr * K.sum(

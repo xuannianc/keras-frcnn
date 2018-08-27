@@ -310,7 +310,7 @@ def get_anchor_gt(all_annotation_data, class_count, C, get_feature_map_size, mod
         for annotation_data in all_annotation_data:
             try:
                 # 是否需要平衡 sample 的数量,是否忽略此 sample
-                if C.balanced_classes and sample_selector.skip_sample_to_balance_classes(annotation_data):
+                if C.balance_classes and sample_selector.skip_sample_to_balance_classes(annotation_data):
                     continue
                 # read in image, and optionally add augmentation
                 if mode == 'train':
