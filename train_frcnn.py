@@ -17,17 +17,15 @@ from log import logger
 from keras.utils import generic_utils
 import json
 
-sys.setrecursionlimit(40000)
 
 parser = OptionParser()
-
-# parser.add_option("-p", "--path", dest="train_path", help="Path to training data.")
-DATASET_DIR = '/home/adam/.keras/datasets/VOCdevkit'
-parser.add_option("-o", "--parser", dest="parser", help="Parser to use. One of simple or pascal_voc",
+# DATASET_DIR = '/home/adam/.keras/datasets/VOCdevkit'
+parser.add_option("-d", "--dataset", dest="dataset_dir", help="Path to training dataset.")
+parser.add_option("-o", "--parser", dest="parser", help="Parser to use. One of 'simple' or 'pascal_voc'",
                   default="pascal_voc")
 parser.add_option("-n", "--num_rois", type="int", dest="num_rois", help="Number of RoIs to process at once.",
                   default=32)
-parser.add_option("--network", dest="network", help="Base network to use. Supports vgg or resnet50.",
+parser.add_option("--network", dest="network", help="Base network to use. Supports vgg and resnet50.",
                   default='resnet50')
 parser.add_option("--hf", dest="horizontal_flips", help="Augment with horizontal flips in training. (Default=false).",
                   action="store_true", default=False)
@@ -38,33 +36,31 @@ parser.add_option("--rot", "--rot_90", dest="rot_90",
                   action="store_true", default=False)
 parser.add_option("--image_min_side", type="int", dest="image_min_side", help="image min side to resize", default=800)
 parser.add_option("--num_epochs", type="int", dest="num_epochs", help="Number of epochs.", default=2000)
-parser.add_option("--config_filename", dest="config_filename",
+parser.add_option("--config_output_file", dest="config_output_file",
                   help="Location to store all the metadata related to the training (to be used when testing).",
                   default="config.pickle")
 parser.add_option("--model_weight_path", dest="model_weight_path", help="Output path for model weights.")
 parser.add_option("--base_net_weight_path", dest="base_net_weight_path",
-                  help="Input path for base network weights. If not specified, will try to load default weights provided by keras.")
+                  help="Path for base network weights. If not specified, will try to load default weights provided by keras.")
 
 (options, args) = parser.parse_args()
 
-# if not options.train_path:  # if filename is not given
-#     parser.error('Error: path to training data must be specified. Pass --path to command line')
+if not options.dataset_dir:  # if dataset_dir is not specified
+    parser.error('Path to training dataset must be specified. Pass -d or --dataset to command line')
 
 if options.parser == 'pascal_voc':
     from keras_frcnn.pascal_voc_parser import get_annotation_data
 elif options.parser == 'simple':
     from keras_frcnn.simple_parser import get_data
 else:
-    logger.exception("Command line option parser must be one of 'pascal_voc' or 'simple'")
-    raise ValueError("Command line option parser must be one of 'pascal_voc' or 'simple'")
+    parser.error("Option parser must be one of 'pascal_voc' or 'simple'")
 
 # pass the settings from the command line, and persist them in the config object
 C = config.Config()
-
-C.use_horizontal_flips = bool(options.horizontal_flips)
-C.use_vertical_flips = bool(options.vertical_flips)
-C.rot_90 = bool(options.rot_90)
-C.num_rois = int(options.num_rois)
+C.use_horizontal_flips = options.horizontal_flips
+C.use_vertical_flips = options.vertical_flips
+C.rot_90 = options.rot_90
+C.num_rois = options.num_rois
 C.image_min_side = options.image_min_side
 
 if options.network == 'vgg':
@@ -74,8 +70,7 @@ elif options.network == 'resnet50':
     from keras_frcnn import resnet as nn
     C.network = 'resnet50'
 else:
-    logger.exception('Not a valid model')
-    raise ValueError
+    parser.error("Option network must be one of 'vgg' or 'resnet50'")
 
 # check if output weight path was passed via command line
 if options.model_weight_path:
