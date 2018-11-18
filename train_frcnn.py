@@ -27,12 +27,12 @@ parser.add_option("-n", "--num_rois", type="int", dest="num_rois", help="Number 
                   default=32)
 parser.add_option("--network", dest="network", help="Base network to use. Supports vgg and resnet50.",
                   default='resnet50')
-parser.add_option("--hf", dest="horizontal_flips", help="Augment with horizontal flips in training. (Default=false).",
+parser.add_option("--hf", dest="horizontal_flips", help="Augment with horizontal flips in training.",
                   action="store_true", default=False)
-parser.add_option("--vf", dest="vertical_flips", help="Augment with vertical flips in training. (Default=false).",
+parser.add_option("--vf", dest="vertical_flips", help="Augment with vertical flips in training.",
                   action="store_true", default=False)
 parser.add_option("--rot", "--rot_90", dest="rot_90",
-                  help="Augment with 90 degree rotations in training. (Default=false).",
+                  help="Augment with 90 degree rotations in training.",
                   action="store_true", default=False)
 parser.add_option("--image_min_side", type="int", dest="image_min_side", help="image min side to resize", default=800)
 parser.add_option("--num_epochs", type="int", dest="num_epochs", help="Number of epochs.", default=2000)
