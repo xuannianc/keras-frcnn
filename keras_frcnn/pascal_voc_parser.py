@@ -7,7 +7,7 @@ import json
 
 
 def get_annotation_data(dataset_dir, visualize=False):
-    # [{'filepath':'','width':'','height':'','imageset':'trainval|test','bbox':[{'class':'','x1':'','y1':'','x2':'','x3':'','difficulty':''}]}]
+    # [{'filepath':'','width':'','height':'','imageset':'trainval|test','bbox':[{'class':'','x1':'','y1':'','x2':'','x3':'','difficulty':True|False}]}]
     all_annotation_data = []
     # class objects statistics
     classes_count = {}
@@ -15,10 +15,10 @@ def get_annotation_data(dataset_dir, visualize=False):
     class_name_idx_mapping = {}
     sub_dataset_dirs = [os.path.join(dataset_dir, sub_dataset) for sub_dataset in ['VOC2007', 'VOC2012']]
 
-    print('Parsing annotation files...')
+    logger.info('Parsing annotation files...')
     for sub_dataset_dir in sub_dataset_dirs:
         if not osp.exists(sub_dataset_dir):
-            print('sub_dataset_dir={} does not exist'.format(sub_dataset_dir))
+            logger.debug('sub_dataset_dir={} does not exist'.format(sub_dataset_dir))
             continue
         annotations_dir = os.path.join(sub_dataset_dir, 'Annotations')
         images_dir = os.path.join(sub_dataset_dir, 'JPEGImages')
@@ -36,25 +36,29 @@ def get_annotation_data(dataset_dir, visualize=False):
         for annotation_path in annotation_paths:
             try:
                 et = ET.parse(annotation_path)
-                element = et.getroot()
-                element_objs = element.findall('object')
-                element_filename = element.find('filename').text
-                element_width = int(element.find('size').find('width').text)
-                element_height = int(element.find('size').find('height').text)
+                root = et.getroot()
+                # <object>
+                objects = root.findall('object')
+                # <filename>
+                filename = root.find('filename').text
+                # <width>
+                width = int(root.find('size').find('width').text)
+                # <height>
+                height = int(root.find('size').find('height').text)
 
-                if len(element_objs) > 0:
-                    annotation_data = {'filepath': os.path.join(images_dir, element_filename),
-                                       'width': element_width,
-                                       'height': element_height,
+                if len(objects) > 0:
+                    annotation_data = {'filepath': os.path.join(images_dir, filename),
+                                       'width': width,
+                                       'height': height,
                                        'bboxes': []}
 
-                    if element_filename in trainval_files:
+                    if filename in trainval_files:
                         annotation_data['imageset'] = 'train'
                     else:
                         annotation_data['imageset'] = 'val'
 
-                    for element_obj in element_objs:
-                        class_name = element_obj.find('name').text
+                    for object in objects:
+                        class_name = object.find('name').text
                         if class_name not in classes_count:
                             classes_count[class_name] = 1
                         else:
@@ -63,13 +67,13 @@ def get_annotation_data(dataset_dir, visualize=False):
                         if class_name not in class_name_idx_mapping:
                             class_name_idx_mapping[class_name] = len(class_name_idx_mapping)
 
-                        obj_bbox = element_obj.find('bndbox')
+                        obj_bbox = object.find('bndbox')
                         x1 = int(round(float(obj_bbox.find('xmin').text)))
                         y1 = int(round(float(obj_bbox.find('ymin').text)))
                         x2 = int(round(float(obj_bbox.find('xmax').text)))
                         y2 = int(round(float(obj_bbox.find('ymax').text)))
                         # True or False
-                        difficulty = int(element_obj.find('difficult').text) == 1
+                        difficulty = int(object.find('difficult').text) == 1
                         annotation_data['bboxes'].append(
                             {'class': class_name, 'x1': x1, 'x2': x2, 'y1': y1, 'y2': y2, 'difficult': difficulty})
                     all_annotation_data.append(annotation_data)
@@ -94,4 +98,5 @@ def serialize():
     json.dump(class_name_idx_mapping, open('class_name_idx_mapping.json', 'w'))
 
 
-# serialize()
+if __name__ == '__main__':
+    serialize()

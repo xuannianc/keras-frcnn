@@ -34,9 +34,9 @@ parser.add_option("--vf", dest="vertical_flips", help="Augment with vertical fli
 parser.add_option("--rot", "--rot_90", dest="rot_90",
                   help="Augment with 90 degree rotations in training.",
                   action="store_true", default=False)
-parser.add_option("--image_min_side", type="int", dest="image_min_side", help="image min side to resize", default=800)
+parser.add_option("--image_min_side", type="int", dest="image_min_side", help="Min side of image to resize.", default=800)
 parser.add_option("--num_epochs", type="int", dest="num_epochs", help="Number of epochs.", default=2000)
-parser.add_option("--config_output_file", dest="config_output_file",
+parser.add_option("--config_output_path", dest="config_output_path",
                   help="Location to store all the metadata related to the training (to be used when testing).",
                   default="config.pickle")
 parser.add_option("--model_weight_path", dest="model_weight_path", help="Output path for model weights.")
@@ -98,13 +98,14 @@ C.class_name_idx_mapping = class_name_idx_mapping
 
 logger.debug('class_count={}'.format(classes_count))
 logger.info('Num of classes (including bg) = {}'.format(len(classes_count)))
+logger.debug('class_name_idx_mapping={}'.format(class_name_idx_mapping))
 
-config_output_filename = options.config_filename
+config_output_path = options.config_output_path
 
-with open(config_output_filename, 'wb') as config_f:
+with open(config_output_path, 'wb') as config_f:
     pickle.dump(C, config_f)
     print('Config has been written to {}, and can be loaded when testing to ensure correct results'.format(
-        config_output_filename))
+        config_output_path))
 
 random.shuffle(all_annotation_data)
 
