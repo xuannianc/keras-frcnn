@@ -31,10 +31,10 @@ parser.add_option("--hf", dest="horizontal_flips", help="Augment with horizontal
                   action="store_true", default=False)
 parser.add_option("--vf", dest="vertical_flips", help="Augment with vertical flips in training.",
                   action="store_true", default=False)
-parser.add_option("--rot", "--rot_90", dest="rot_90",
+parser.add_option("--rot", "--rotate", dest="rotate",
                   help="Augment with 90 degree rotations in training.",
                   action="store_true", default=False)
-parser.add_option("--image_min_side", type="int", dest="image_min_side", help="Min side of image to resize.", default=800)
+parser.add_option("--image_min_size", type="int", dest="image_min_size", help="Min side of image to resize.", default=800)
 parser.add_option("--num_epochs", type="int", dest="num_epochs", help="Number of epochs.", default=2000)
 parser.add_option("--config_output_path", dest="config_output_path",
                   help="Location to store all the metadata related to the training (to be used when testing).",
@@ -59,9 +59,9 @@ else:
 C = config.Config()
 C.use_horizontal_flips = options.horizontal_flips
 C.use_vertical_flips = options.vertical_flips
-C.rot_90 = options.rot_90
+C.rotate = options.rotate
 C.num_rois = options.num_rois
-C.image_min_side = options.image_min_side
+C.image_min_size = options.image_min_size
 
 if options.network == 'vgg':
     C.network = 'vgg'
@@ -86,7 +86,7 @@ else:
     C.base_net_weights_path = nn.get_weight_path()
 
 # all_annotation_data, classes_count, class_name_idx_mapping = get_annotation_data(DATASET_DIR)
-all_annotation_data = json.load(open('annotation_data.json'))
+all_annotations = json.load(open('annotation_data.json'))
 classes_count = json.load(open('classes_count.json'))
 class_name_idx_mapping = json.load(open('class_name_idx_mapping.json'))
 
@@ -107,21 +107,17 @@ with open(config_output_path, 'wb') as config_f:
     logger.info('Config has been written to {}, and can be loaded when testing to ensure correct results'.format(
         config_output_path))
 
-random.shuffle(all_annotation_data)
+random.shuffle(all_annotations)
 
-train_annotation_data = [annotation_data for annotation_data in all_annotation_data if
-                         annotation_data['imageset'] == 'train']
-val_annotation_data = [annotation_data for annotation_data in all_annotation_data if
-                       annotation_data['imageset'] == 'val']
+train_annotations = [annotation for annotation in all_annotations if annotation['imageset'] == 'train']
+val_annotations = [annotation for annotation in all_annotations if annotation['imageset'] == 'val']
 
-logger.info('Num of samples {}'.format(len(all_annotation_data)))
-logger.info('Num of train samples {}'.format(len(train_annotation_data)))
-logger.info('Num of val samples {}'.format(len(val_annotation_data)))
+logger.info('Num of samples {}'.format(len(all_annotations)))
+logger.info('Num of train samples {}'.format(len(train_annotations)))
+logger.info('Num of val samples {}'.format(len(val_annotations)))
 
-train_data_gen = data_generators.get_anchor_gt(train_annotation_data, classes_count, C, nn.get_feature_map_size,
-                                               mode='train')
-val_data_gen = data_generators.get_anchor_gt(val_annotation_data, classes_count, C, nn.get_feature_map_size,
-                                             mode='val')
+train_data_gen = data_generators.get_anchor_gt(train_annotations, classes_count, C, nn.get_feature_map_size, mode='train')
+val_data_gen = data_generators.get_anchor_gt(val_annotations, classes_count, C, nn.get_feature_map_size, mode='val')
 
 input_shape = (None, None, 3)
 image_input = Input(shape=input_shape)
@@ -263,9 +259,9 @@ for epoch_idx in range(num_epochs):
                             'RPN is not producing bounding boxes that overlap the ground truth boxes. Check RPN settings or keep training.')
                     print('RPN Classification Loss: {}'.format(rpn_class_loss))
                     print('RPN Regression Loss : {}'.format(rpn_regr_loss))
-                    print('CRNN Classification Loss: {}'.format(rcnn_class_loss))
-                    print('CRNN Regression Loss: {}'.format(rcnn_regr_loss))
-                    print('CRNN Classification Accuracy: {}'.format(rcnn_class_acc))
+                    print('RCNN Classification Loss: {}'.format(rcnn_class_loss))
+                    print('RCNN Regression Loss: {}'.format(rcnn_regr_loss))
+                    print('RCNN Classification Accuracy: {}'.format(rcnn_class_acc))
                     print('Elapsed time: {}'.format(time.time() - start_time))
 
                 curr_loss = rpn_class_loss + rpn_regr_loss + rcnn_class_loss + rcnn_regr_loss
@@ -283,4 +279,4 @@ for epoch_idx in range(num_epochs):
             logger.exception('{}'.format(e))
             continue
 
-print('Training complete, exiting.')
+logger.info('Training complete, exiting.')

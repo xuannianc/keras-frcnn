@@ -43,7 +43,7 @@ elif C.network == 'vgg':
 # turn off any data augmentation at test time
 C.use_horizontal_flips = False
 C.use_vertical_flips = False
-C.rot_90 = False
+C.rotate = False
 
 img_path = options.test_path
 

@@ -10,7 +10,7 @@ def calc_iou(rois, annotation_data_ang, C, class_name_idx_mapping):
     bboxes = annotation_data_ang['bboxes']
     (width, height) = (annotation_data_ang['width'], annotation_data_ang['height'])
     # get image dimensions for resizing
-    (resized_width, resized_height) = data_generators.get_new_image_size(width, height, C.image_min_side)
+    (resized_width, resized_height) = data_generators.get_new_image_size(width, height, C.image_min_size)
     # ground truth bbox 在 feature map 上的坐标
     gtb = np.zeros((len(bboxes), 4))
     width_ratio = resized_height / float(width)

@@ -15,7 +15,7 @@ def augment(annotation, config, augment=True):
             #  __________|___________
             # |          |           |
             # |  _____   | x1,y1__   |
-            # | |_____|  |  |_____|  |(width - x2)
+            # | |_____|  |  |_____|  |  右边表示原 bbox
             # |__________|_____x2,y2_|
             #            |
             image = cv2.flip(image, 1)
@@ -42,19 +42,19 @@ def augment(annotation, config, augment=True):
             for bbox in augmented_annotation['bboxes']:
                 y1 = bbox['y1']
                 y2 = bbox['y2']
-                bbox['y2'] = height - y1
                 bbox['y1'] = height - y2
+                bbox['y2'] = height - y1
 
-        if config.rot_90:
+        if config.rotate:
             angle = np.random.choice([0, 90, 180, 270], 1)[0]
-            if angle == 270:
-                image = np.transpose(image, (1, 0, 2))
-                image = cv2.flip(image, 0)
-            elif angle == 180:
-                image = cv2.flip(image, -1)
-            elif angle == 90:
+            if angle == 90:
                 image = np.transpose(image, (1, 0, 2))
                 image = cv2.flip(image, 1)
+            elif angle == 180:
+                image = cv2.flip(image, -1)
+            elif angle == 270:
+                image = np.transpose(image, (1, 0, 2))
+                image = cv2.flip(image, 0)
             elif angle == 0:
                 pass
 

@@ -41,22 +41,22 @@ def iou(a, b):
     return float(area_i) / float(area_u + 1e-6)
 
 
-def get_new_image_size(width, height, image_min_side=800):
+def get_new_image_size(width, height, image_min_size=800):
     """
     按照 image_min_size 的标准来计算 resized 后的 image size
     :param width:
     :param height:
-    :param image_min_side:
+    :param image_min_size:
     :return:
     """
     if width <= height:
-        ratio = float(image_min_side) / width
+        ratio = float(image_min_size) / width
         resized_height = int(ratio * height)
-        resized_width = image_min_side
+        resized_width = image_min_size
     else:
-        ratio = float(image_min_side) / height
+        ratio = float(image_min_size) / height
         resized_width = int(ratio * width)
-        resized_height = image_min_side
+        resized_height = image_min_size
 
     return resized_width, resized_height
 
@@ -87,23 +87,24 @@ class SampleSelector:
         return not class_in_image
 
 
-def calc_rpn(C, annotation_data_aug, width, height, resized_width, resized_height, get_feature_map_size):
+def calc_rpn(C, augmented_annotation, width, height, resized_width, resized_height, get_feature_map_size):
     # get anchor config
+    # 既是 rpn 的步长, 也是 feature map 相对于原图的缩放倍数
     downscale = float(C.rpn_stride)
-    anchor_sizes = C.anchor_box_scales
-    anchor_ratios = C.anchor_box_ratios
-    num_anchors = len(anchor_sizes) * len(anchor_ratios)
+    anchor_scales = C.anchor_scales
+    anchor_ratios = C.anchor_ratios
+    num_anchors = len(anchor_scales) * len(anchor_ratios)
 
     # calculate the output map size based on the network architecture
     (output_width, output_height) = get_feature_map_size(resized_width, resized_height)
 
     num_anchor_ratios = len(anchor_ratios)
-    # initialise empty output objectives
+    # initialize empty output objectives
     y_rpn_overlap = np.zeros((output_height, output_width, num_anchors))
     y_is_box_valid = np.zeros((output_height, output_width, num_anchors))
     y_rpn_regr = np.zeros((output_height, output_width, num_anchors * 4))
 
-    num_bboxes = len(annotation_data_aug['bboxes'])
+    num_bboxes = len(augmented_annotation['bboxes'])
     num_anchors_for_bbox = np.zeros(num_bboxes).astype(int)
     best_anchor_for_bbox = -1 * np.ones((num_bboxes, 4)).astype(int)
     best_iou_for_bbox = np.zeros(num_bboxes).astype(np.float32)
@@ -112,20 +113,19 @@ def calc_rpn(C, annotation_data_aug, width, height, resized_width, resized_heigh
 
     # get the GT box coordinates, and resize to account for image resizing
     gta = np.zeros((num_bboxes, 4))
-    for bbox_idx, bbox in enumerate(annotation_data_aug['bboxes']):
-        # get the GT box coordinates, and resize to account for image resizing
+    for bbox_idx, bbox in enumerate(augmented_annotation['bboxes']):
         gta[bbox_idx, 0] = bbox['x1'] * (resized_width / float(width))
         gta[bbox_idx, 1] = bbox['x2'] * (resized_width / float(width))
         gta[bbox_idx, 2] = bbox['y1'] * (resized_height / float(height))
         gta[bbox_idx, 3] = bbox['y2'] * (resized_height / float(height))
 
     # rpn ground truth
-    for anchor_size_idx in range(len(anchor_sizes)):
+    for anchor_scale_idx in range(len(anchor_scales)):
         for anchor_ratio_idx in range(num_anchor_ratios):
-            anchor_width = anchor_sizes[anchor_size_idx] * anchor_ratios[anchor_ratio_idx][0]
-            anchor_height = anchor_sizes[anchor_size_idx] * anchor_ratios[anchor_ratio_idx][1]
+            anchor_width = anchor_scales[anchor_scale_idx] * anchor_ratios[anchor_ratio_idx][0]
+            anchor_height = anchor_scales[anchor_scale_idx] * anchor_ratios[anchor_ratio_idx][1]
 
-            # 遍历 feature map 的所有点,分别映射到输入图像的对应矩形的中心点
+            # 遍历 feature map 的所有点,分别映射到输入图像的对应 16 * 16 的矩形的中心点
             for ix in range(output_width):
                 # x-coordinates of the current anchor box
                 anchor_x1 = downscale * (ix + 0.5) - anchor_width // 2
@@ -170,12 +170,12 @@ def calc_rpn(C, annotation_data_aug, width, height, resized_width, resized_heigh
                             # bbox 宽度的 log 值 / anchor 的宽
                             tw = np.log((gta[bbox_idx, 1] - gta[bbox_idx, 0]) / (anchor_x2 - anchor_x1))
                             th = np.log((gta[bbox_idx, 3] - gta[bbox_idx, 2]) / (anchor_y2 - anchor_y1))
-                        if annotation_data_aug['bboxes'][bbox_idx]['class'] != 'bg':
+                        if augmented_annotation['bboxes'][bbox_idx]['class'] != 'bg':
 
                             # Every GT box should be mapped to an anchor box,
                             # so we keep track of which anchor box was best
                             if curr_iou > best_iou_for_bbox[bbox_idx]:
-                                best_anchor_for_bbox[bbox_idx] = [jy, ix, anchor_ratio_idx, anchor_size_idx]
+                                best_anchor_for_bbox[bbox_idx] = [jy, ix, anchor_ratio_idx, anchor_scale_idx]
                                 best_iou_for_bbox[bbox_idx] = curr_iou
                                 best_x_for_bbox[bbox_idx, :] = [anchor_x1, anchor_x2, anchor_y1, anchor_y2]
                                 best_dx_for_bbox[bbox_idx, :] = [tx, ty, tw, th]
@@ -298,7 +298,7 @@ def threadsafe_generator(f):
     return g
 
 
-def get_anchor_gt(all_annotation_data, class_count, C, get_feature_map_size, mode='train'):
+def get_anchor_gt(annotations, class_count, C, get_feature_map_size, mode='train'):
     # The following line is not useful with Python 3.5, it is kept for the legacy
     # all_img_data = sorted(all_img_data)
 
@@ -306,28 +306,29 @@ def get_anchor_gt(all_annotation_data, class_count, C, get_feature_map_size, mod
 
     while True:
         if mode == 'train':
-            np.random.shuffle(all_annotation_data)
-        for annotation_data in all_annotation_data:
+            np.random.shuffle(annotations)
+        for annotation in annotations:
             try:
                 # 是否需要平衡 sample 的数量,是否忽略此 sample
-                if C.balance_classes and sample_selector.skip_sample_to_balance_classes(annotation_data):
+                if C.balance_classes and sample_selector.skip_sample_to_balance_classes(annotation):
                     continue
                 # read in image, and optionally add augmentation
                 if mode == 'train':
-                    aug_annotation_data, image = data_augmentor.augment(annotation_data, C, augment=True)
+                    augmented_annotation, image = data_augmentor.augment(annotation, C, augment=True)
                 else:
-                    aug_annotation_data, image = data_augmentor.augment(annotation_data, C, augment=False)
+                    augmented_annotation, image = data_augmentor.augment(annotation, C, augment=False)
 
                 height, width = image.shape[:2]
 
                 # get image dimensions for resizing
-                (resized_width, resized_height) = get_new_image_size(width, height, C.image_min_side)
+                # 按照最小的边为 800 进行 resize
+                (resized_width, resized_height) = get_new_image_size(width, height, C.image_min_size)
 
                 # resize the image so that smallest side is 800px
                 image = cv2.resize(image, (resized_width, resized_height), interpolation=cv2.INTER_CUBIC)
 
                 try:
-                    y_rpn_cls, y_rpn_regr = calc_rpn(C, aug_annotation_data, width, height,
+                    y_rpn_cls, y_rpn_regr = calc_rpn(C, annotation, width, height,
                                                      resized_width,
                                                      resized_height,
                                                      get_feature_map_size)
@@ -347,7 +348,7 @@ def get_anchor_gt(all_annotation_data, class_count, C, get_feature_map_size, mod
                 image = np.expand_dims(image, axis=0)
                 # 规整因子,什么意思?
                 y_rpn_regr[:, y_rpn_regr.shape[1] // 2:, :, :] *= C.std_scaling
-                yield np.copy(image), [np.copy(y_rpn_cls), np.copy(y_rpn_regr)], aug_annotation_data
+                yield np.copy(image), [np.copy(y_rpn_cls), np.copy(y_rpn_regr)], augmented_annotation
 
             except Exception as e:
                 logger.error(e)
