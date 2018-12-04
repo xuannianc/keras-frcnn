@@ -10,9 +10,9 @@ from keras import backend as K
 from keras.optimizers import Adam, SGD, RMSprop
 from keras.layers import Input
 from keras.models import Model
-from keras_frcnn import config, data_generators
-from keras_frcnn import losses as losses
-import keras_frcnn.roi_helpers as roi_helpers
+from frcnn import config, data_generators
+from frcnn import losses as losses
+import frcnn.roi_helpers as roi_helpers
 from log import logger
 from keras.utils import generic_utils
 import json
@@ -49,9 +49,9 @@ if not options.dataset_dir:  # if dataset_dir is not specified
     parser.error('Path to training dataset must be specified. Pass -d or --dataset to command line')
 
 if options.parser == 'pascal_voc':
-    from keras_frcnn.pascal_voc_parser import get_annotation_data
+    from frcnn.pascal_voc_parser import get_annotation_data
 elif options.parser == 'simple':
-    from keras_frcnn.simple_parser import get_data
+    from frcnn.simple_parser import get_data
 else:
     parser.error("Option parser must be one of 'pascal_voc' or 'simple'")
 
@@ -65,9 +65,9 @@ C.image_min_side = options.image_min_side
 
 if options.network == 'vgg':
     C.network = 'vgg'
-    from keras_frcnn import vgg as nn
+    from frcnn import vgg as nn
 elif options.network == 'resnet50':
-    from keras_frcnn import resnet as nn
+    from frcnn import resnet as nn
     C.network = 'resnet50'
 else:
     parser.error("Option network must be one of 'vgg' or 'resnet50'")
@@ -104,7 +104,7 @@ config_output_path = options.config_output_path
 
 with open(config_output_path, 'wb') as config_f:
     pickle.dump(C, config_f)
-    print('Config has been written to {}, and can be loaded when testing to ensure correct results'.format(
+    logger.info('Config has been written to {}, and can be loaded when testing to ensure correct results'.format(
         config_output_path))
 
 random.shuffle(all_annotation_data)

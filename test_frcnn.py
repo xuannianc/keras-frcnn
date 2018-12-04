@@ -6,11 +6,11 @@ import sys
 import pickle
 from optparse import OptionParser
 import time
-from keras_frcnn import config
+from frcnn import config
 from keras import backend as K
 from keras.layers import Input
 from keras.models import Model
-from keras_frcnn import roi_helpers
+from frcnn import roi_helpers
 
 sys.setrecursionlimit(40000)
 
@@ -36,9 +36,9 @@ with open(config_output_filename, 'rb') as f_in:
 	C = pickle.load(f_in)
 
 if C.network == 'resnet50':
-	import keras_frcnn.resnet as nn
+	import frcnn.resnet as nn
 elif C.network == 'vgg':
-	import keras_frcnn.vgg as nn
+	import frcnn.vgg as nn
 
 # turn off any data augmentation at test time
 C.use_horizontal_flips = False

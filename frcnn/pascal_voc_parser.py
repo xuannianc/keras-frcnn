@@ -92,7 +92,7 @@ def get_annotation_data(dataset_dir, visualize=False):
 
 def serialize():
     dataset_dir = '/home/adam/.keras/datasets/VOCdevkit'
-    all_annotation_data, classes_count, class_name_idx_mapping = get_annotation_data(dataset_dir)
+    all_annotation_data, classes_count, class_name_idx_mapping = get_annotation_data(dataset_dir, visualize=True)
     json.dump(all_annotation_data, open('annotation_data.json', 'w'))
     json.dump(classes_count, open('classes_count.json', 'w'))
     json.dump(class_name_idx_mapping, open('class_name_idx_mapping.json', 'w'))

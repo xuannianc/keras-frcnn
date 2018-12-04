@@ -3,7 +3,7 @@ import numpy as np
 import cv2
 import random
 import copy
-from . import data_augment
+from . import data_augmentor
 import threading
 import itertools
 from log import logger
@@ -72,17 +72,17 @@ class SampleSelector:
     def skip_sample_to_balance_classes(self, annotation_data):
         """
         是否 skip 该 annotation_data
-        我觉得该方法会大大减少 sample 的数量
+        NOTE: 我觉得该方法会大大减少 sample 的数量
         :param annotation_data:
         :return: True|False
         """
         class_in_image = False
         for bbox in annotation_data['bboxes']:
             class_name = bbox['class']
-            if class_name == self.curr_class:
+            if class_name == self.current_class:
                 # 直到遇到包含当前 class 的图片才不 skip
                 class_in_image = True
-                self.curr_class = next(self.class_cycle)
+                self.current_class = next(self.class_cycle)
                 break
         return not class_in_image
 
@@ -314,9 +314,9 @@ def get_anchor_gt(all_annotation_data, class_count, C, get_feature_map_size, mod
                     continue
                 # read in image, and optionally add augmentation
                 if mode == 'train':
-                    aug_annotation_data, image = data_augment.augment(annotation_data, C, augment=True)
+                    aug_annotation_data, image = data_augmentor.augment(annotation_data, C, augment=True)
                 else:
-                    aug_annotation_data, image = data_augment.augment(annotation_data, C, augment=False)
+                    aug_annotation_data, image = data_augmentor.augment(annotation_data, C, augment=False)
 
                 height, width = image.shape[:2]
 
