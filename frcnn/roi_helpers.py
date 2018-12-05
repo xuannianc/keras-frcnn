@@ -262,20 +262,20 @@ def non_max_suppression_fast(boxes, probs, overlap_thresh=0.9, max_boxes=300):
     return boxes, probs
 
 
-def rpn_to_roi(rpn_class, rpn_regr, C, max_boxes=300, overlap_thresh=0.9):
+def rpn_to_roi(rpn_class, rpn_regr, C, max_rois=300, overlap_thresh=0.9):
     """
     rpn 产生的 anchor 进行修正和筛选, 生成 roi
     :param rpn_class: rpn 分类的结果 (1,m,n,9) m,n 表示 feature map 的高和宽
     :param rpn_regr: rpn 回归的结果 (1,m,n,36)
     :param C: config 对象
-    :param use_regr:
-    :param max_boxes: 最大 roi 个数
+    :param max_rois: 最大 roi 个数
     :param overlap_thresh:
     :return:
     """
+    # 在生成 rpn target 时乘过 C.std_scaling
     rpn_regr = rpn_regr / C.std_scaling
-    anchor_sizes = C.anchor_box_scales
-    anchor_ratios = C.anchor_box_ratios
+    anchor_scales = C.anchor_scales
+    anchor_ratios = C.anchor_ratios
 
     assert rpn_class.shape[0] == 1
     assert rpn_regr.shape[0] == 1
@@ -286,19 +286,21 @@ def rpn_to_roi(rpn_class, rpn_regr, C, max_boxes=300, overlap_thresh=0.9):
     # (m,n,9,4)
     A = np.zeros((m, n, d, 4))
 
-    for anchor_size in anchor_sizes:
+    for anchor_scale in anchor_scales:
         for anchor_ratio in anchor_ratios:
             # anchor 在特征图上的宽
-            anchor_width = (anchor_size * anchor_ratio[0]) / C.rpn_stride
+            anchor_width = (anchor_scale * anchor_ratio[0]) / C.rpn_stride
             # anchor 在特征图上的高
-            anchor_height = (anchor_size * anchor_ratio[1]) / C.rpn_stride
+            anchor_height = (anchor_scale * anchor_ratio[1]) / C.rpn_stride
             # 该 anchor 的回归梯度
             regr = rpn_regr[0, :, :, 4 * anchor_idx:4 * anchor_idx + 4]
             # X: (m, n) [[0,1...,n-1],[0,1...,n-1]...]
             # Y: (m, n) [[0,0...,0],[1,1...,1],...[m-1,m-1...,m-1]]
             # 其实生成的是一个坐标,特征图上的每个点都有了相应的坐标
+            # X 表示的是所有 anchor 的中心点的 x 坐标
+            # Y 表示的是所有 anchor 的中心点的 y 坐标
             X, Y = np.meshgrid(np.arange(n), np.arange(m))
-            # 计算 anchor 的坐标 (x,y,w,h)
+            # A 的最后一维的四个值表示 anchor 的 (x,y,w,h)
             A[:, :, anchor_idx, 0] = X - anchor_width / 2
             A[:, :, anchor_idx, 1] = Y - anchor_height / 2
             A[:, :, anchor_idx, 2] = anchor_width
@@ -325,20 +327,20 @@ def rpn_to_roi(rpn_class, rpn_regr, C, max_boxes=300, overlap_thresh=0.9):
             anchor_idx += 1
 
     # (m*n*9,4)
-    all_boxes = np.reshape(A, (-1, 4))
-    # (m*n*9,1)
+    all_rois = np.reshape(A, (-1, 4))
+    # (m*n*9,)
     all_probs = rpn_class.reshape((-1))
 
-    x1 = all_boxes[:, 0]
-    y1 = all_boxes[:, 1]
-    x2 = all_boxes[:, 2]
-    y2 = all_boxes[:, 3]
+    x1 = all_rois[:, 0]
+    y1 = all_rois[:, 1]
+    x2 = all_rois[:, 2]
+    y2 = all_rois[:, 3]
 
     # 删除不合理的矩形存在, 左上角的坐标不能大于右下角的坐标
     idxs = np.where((x1 - x2 >= 0) | (y1 - y2 >= 0))
-    all_boxes = np.delete(all_boxes, idxs, axis=0)
+    all_rois = np.delete(all_rois, idxs, axis=0)
     all_probs = np.delete(all_probs, idxs, axis=0)
 
-    result = non_max_suppression_fast(all_boxes, all_probs, overlap_thresh=overlap_thresh, max_boxes=max_boxes)[0]
+    result = non_max_suppression_fast(all_rois, all_probs, overlap_thresh=overlap_thresh, max_boxes=max_rois)[0]
 
     return result

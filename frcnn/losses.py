@@ -14,8 +14,8 @@ epsilon = 1e-4
 
 def rpn_regr_loss(num_anchors):
     def rpn_regr_loss_fixed_num(y_true, y_pred):
-        # :4 * num_anchors 部分是 is_box_valid, valid 为 1, invalid 为 0
-        # y_true[:,:,:,:4*num_anchors] 作为乘式因子就是想忽略 invalid 这部分的 loss
+        # :4 * num_anchors 部分表示 positive 或者 negative
+        # y_true[:,:,:,:4 * num_anchors] 作为乘式因子就是想忽略 negative 这部分的 loss
         diff = y_true[:, :, :, 4 * num_anchors:] - y_pred
         abs_diff = K.abs(diff)
         # less_equal 逐元素比较 a<=b, less 逐元素比较 a<b
@@ -33,6 +33,7 @@ def rpn_class_loss(num_anchors):
     def rpn_class_loss_fixed_num(y_true, y_pred):
         # y_true[:, :, :, :num_anchors] 表示的是 anchor 是否 is valid, 既是否是 neutral
         # y_true[:, :, :, num_anchors:] 表示的是 anchor 是否 overlap, 既是 positive,还是 negative
+        # y_true[:, :, :, :num_anchors] 作为乘式因子是想要忽略 neutral 这部分的 loss
         return lambda_rpn_class * K.sum(y_true[:, :, :, :num_anchors] * K.binary_crossentropy(y_pred[:, :, :, :],
                                                                                               y_true[:, :, :,
                                                                                               num_anchors:])) / K.sum(

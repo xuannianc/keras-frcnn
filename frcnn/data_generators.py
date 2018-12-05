@@ -272,7 +272,7 @@ def calc_rpn(C, augmented_annotation, width, height, resized_width, resized_heig
         y_is_anchor_valid[
             0, negative_anchors[0][ignore_negative_anchor_idx], negative_anchors[1][ignore_negative_anchor_idx],
             negative_anchors[2][ignore_negative_anchor_idx]] = 0
-
+    # shape 为 (1,m,n,18)
     y_rpn_class = np.concatenate([y_is_anchor_valid, y_rpn_overlap], axis=3)
     # np.repeat 对 axis=3 的数重复 4 次, 如 [1,2,3] 会重复成 [1,1,1,1,2,2,2,2,3,3,3,3]
     # y_rpn_overlap 的 shape 为 (1,m,n,9), repeat 之后会变成 (1,m,n,4*9)
@@ -361,7 +361,9 @@ def get_anchor_gt(annotations, classes_count, C, get_feature_map_size, mode='tra
                 image[:, :, 2] -= C.image_channel_mean[2]
                 image = np.expand_dims(image, axis=0)
                 # std_scaling 规整因子,什么意思?
-                y_rpn_regr[:, y_rpn_regr.shape[1] // 2:, :, :] *= C.std_scaling
+                y_rpn_regr[:, :, :, y_rpn_regr.shape[1] // 2:] *= C.std_scaling
+                # y_rpn_cls 的 shape 为 (1,m,n,18)
+                # y_rpn_regr 的 shape 为 (1,m,n,72)
                 yield np.copy(image), [np.copy(y_rpn_cls), np.copy(y_rpn_regr)], augmented_annotation
 
             except Exception as e:

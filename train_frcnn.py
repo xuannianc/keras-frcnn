@@ -17,7 +17,6 @@ from log import logger
 from keras.utils import generic_utils
 import json
 
-
 parser = OptionParser()
 # DATASET_DIR = '/home/adam/.keras/datasets/VOCdevkit'
 parser.add_option("-d", "--dataset", dest="dataset_dir", help="Path to training dataset.")
@@ -34,7 +33,8 @@ parser.add_option("--vf", dest="vertical_flips", help="Augment with vertical fli
 parser.add_option("--rot", "--rotate", dest="rotate",
                   help="Augment with 90 degree rotations in training.",
                   action="store_true", default=False)
-parser.add_option("--image_min_size", type="int", dest="image_min_size", help="Min side of image to resize.", default=800)
+parser.add_option("--image_min_size", type="int", dest="image_min_size", help="Min side of image to resize.",
+                  default=800)
 parser.add_option("--num_epochs", type="int", dest="num_epochs", help="Number of epochs.", default=2000)
 parser.add_option("--config_output_path", dest="config_output_path",
                   help="Location to store all the metadata related to the training (to be used when testing).",
@@ -68,6 +68,7 @@ if options.network == 'vgg':
     from frcnn import vgg as nn
 elif options.network == 'resnet50':
     from frcnn import resnet as nn
+
     C.network = 'resnet50'
 else:
     parser.error("Option network must be one of 'vgg' or 'resnet50'")
@@ -116,7 +117,8 @@ logger.info('Num of samples {}'.format(len(all_annotations)))
 logger.info('Num of train samples {}'.format(len(train_annotations)))
 logger.info('Num of val samples {}'.format(len(val_annotations)))
 
-train_data_gen = data_generators.get_anchor_gt(train_annotations, classes_count, C, nn.get_feature_map_size, mode='train')
+train_data_gen = data_generators.get_anchor_gt(train_annotations, classes_count, C, nn.get_feature_map_size,
+                                               mode='train')
 val_data_gen = data_generators.get_anchor_gt(val_annotations, classes_count, C, nn.get_feature_map_size, mode='val')
 
 input_shape = (None, None, 3)
@@ -138,19 +140,19 @@ model_rcnn.summary()
 model = Model([image_input, roi_input], rpn_output + rcnn_output)
 
 try:
-    print('loading weights from {}'.format(C.base_net_weights_path))
+    logger.info('loading weights from {}'.format(C.base_net_weights_path))
     model_rpn.load_weights(C.base_net_weights_path, by_name=True)
     model_rcnn.load_weights(C.base_net_weights_path, by_name=True)
 except:
-    print('Could not load pretrained model weights of base net. '
-          'Weights can be found in https://github.com/fchollet/deep-learning-models/releases')
+    logger.exception('Could not load pretrained model weights of base net. '
+                     'Weights can be found in https://github.com/fchollet/deep-learning-models/releases')
 
 optimizer = Adam(lr=1e-5)
 optimizer_classifier = Adam(lr=1e-5)
 model_rpn.compile(optimizer=optimizer, loss=[losses.rpn_class_loss(num_anchors), losses.rpn_regr_loss(num_anchors)])
 model_rcnn.compile(optimizer=optimizer_classifier,
                    loss=[losses.rcnn_class_loss, losses.rcnn_regr_loss(len(classes_count) - 1)],
-                   metrics={'rcnn_class':'accuracy'})
+                   metrics={'rcnn_class': 'accuracy'})
 model.compile(optimizer='sgd', loss='mae')
 
 num_epochs = int(options.num_epochs)
@@ -177,8 +179,8 @@ for epoch_idx in range(num_epochs):
             # [(1,m,n,9),(1,m,n,36)]
             rpn_prediction = model_rpn.predict_on_batch(X1)
             # (boxes,probs) boxes:(None,4) (x1,y1,x2,y2) probs:(None,1)
-            rois = roi_helpers.rpn_to_roi(rpn_prediction[0], rpn_prediction[1], C, overlap_thresh=0.7, max_boxes=300)
-            # note: calc_iou converts from (x1,y1,x2,y2) to (x,y,w,h) format
+            rois = roi_helpers.rpn_to_roi(rpn_prediction[0], rpn_prediction[1], C, overlap_thresh=0.7, max_rois=300)
+            # NOTE: calc_iou converts from (x1,y1,x2,y2) to (x,y,w,h) format
             # X2: x_roi Y21: y_class Y22: y_regr
             X2, Y21, Y22, IouS = roi_helpers.calc_iou(rois, aug_annotation_data, C, class_name_idx_mapping)
 
