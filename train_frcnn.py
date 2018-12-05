@@ -125,9 +125,10 @@ roi_input = Input(shape=(None, 4))
 # define the base network (resnet here, can be VGG, Inception, etc)
 base_net_output = nn.base_net(image_input)
 # define the RPN, built on the base net
-num_anchors = len(C.anchor_box_scales) * len(C.anchor_box_ratios)
+num_anchors = len(C.anchor_scales) * len(C.anchor_ratios)
 rpn_output = nn.rpn(base_net_output, num_anchors)
 # [(batch_size=1, num_rois, num_classes),(batch_size=1, num_rois, 4 * (num_classes -1))
+# 第二个元素是 regr 返回的值, 其中不包括 'bg'
 rcnn_output = nn.rcnn(base_net_output, roi_input, C.num_rois, num_classes=len(classes_count))
 model_rpn = Model(image_input, rpn_output)
 model_rpn.summary()
@@ -163,7 +164,7 @@ losses = np.zeros((num_iters, 5))
 start_time = time.time()
 best_loss = np.Inf
 
-print('Starting training...')
+logger.info('Starting training...')
 for epoch_idx in range(num_epochs):
     progbar = generic_utils.Progbar(num_iters)
     print('Epoch {}/{}'.format(epoch_idx + 1, num_epochs))

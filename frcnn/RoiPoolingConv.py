@@ -35,16 +35,18 @@ class RoiPoolingConv(Layer):
     def compute_output_shape(self, input_shape):
         return None, self.num_rois, self.pool_size, self.pool_size, self.num_channels
 
-    def call(self, x):
+    def call(self, inputs, **kwargs):
         """
         layer 的逻辑
         :param x: Input tensor
         :return:
         """
-        assert (len(x) == 2)
+        assert (len(inputs) == 2)
 
-        image = x[0]
-        rois = x[1]
+        # (batch_size=1, rows, cols, channels)
+        images = inputs[0]
+        # (batch_size=1, num_rois, 4)
+        rois = inputs[1]
         outputs = []
 
         for roi_idx in range(self.num_rois):
@@ -53,19 +55,17 @@ class RoiPoolingConv(Layer):
             w = rois[0, roi_idx, 2]
             h = rois[0, roi_idx, 3]
 
-            # NOTE: the RoiPooling implementation differs between theano and tensorflow due to the lack of a resize op
-            # in theano. The theano implementation is much less efficient and leads to long compile times
-
             x = K.cast(x, 'int32')
             y = K.cast(y, 'int32')
             w = K.cast(w, 'int32')
             h = K.cast(h, 'int32')
 
-            # shape (batch_size, pool_size, pool_size, num_channels)
-            resized_images = tf.image.resize_images(image[:, y:y + h, x:x + w, :], (self.pool_size, self.pool_size))
+            # shape 为 (batch_size=1, pool_size, pool_size, num_channels)
+            resized_images = tf.image.resize_images(images[:, y:y + h, x:x + w, :], (self.pool_size, self.pool_size))
             outputs.append(resized_images)
-
+        # shape 为 (num_rois, pool_size, pool_size, num_channels)
         final_output = K.concatenate(outputs, axis=0)
+        # shape 为 (1, num_rois, pool_size, pool_size, num_channels)
         final_output = K.reshape(final_output, (1, self.num_rois, self.pool_size, self.pool_size, self.num_channels))
 
         return final_output

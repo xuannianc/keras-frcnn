@@ -219,7 +219,7 @@ def rcnn(base_layers, input_rois, num_rois, num_classes=21):
     out = TimeDistributed(Flatten())(out)
     out_class = TimeDistributed(Dense(num_classes, activation='softmax', kernel_initializer='zero'),
                                 name='rcnn_class')(out)
-    # note: no regression target for bg class
+    # NOTE: no regression target for bg class
     out_regr = TimeDistributed(Dense(4 * (num_classes - 1), activation='linear', kernel_initializer='zero'),
                                name='rcnn_regr')(out)
     return [out_class, out_regr]

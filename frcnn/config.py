@@ -23,7 +23,7 @@ class Config:
         self.image_min_size = 800
 
         # image channel-wise mean to subtract (BGR)
-        self.image_channel_mean = [123.68, 116.779, 103.939]
+        self.image_channel_mean = [103.939, 116.779, 123.68]
         # ???
         self.img_scaling_factor = 1.0
 
