@@ -6,9 +6,20 @@ import copy
 from log import logger
 
 
-def calc_iou(rois, annotation_data_ang, C, class_name_idx_mapping):
-    bboxes = annotation_data_ang['bboxes']
-    (width, height) = (annotation_data_ang['width'], annotation_data_ang['height'])
+def calc_iou(rois, augmented_annotation, C, class_name_idx_mapping):
+    """
+    分别计算每一个 roi 和所有 gt_bboxes 的 best iou
+        如果 best_iou < C.rcnn_min_overlap, 忽略此 roi
+        如果 C.rcnn_min_overlap <= best_iou < C.rcnn_max_overlap, 设置该 roi 的 class='bg',regr=[0,0,0,0]
+        如果 C.rcnn_max_overlap <= best_iou, 设置 best_iou 对应的 gt_bbox 的 class 为该 roi 的 class, 并计算 regr
+    :param rois:
+    :param augmented_annotation:
+    :param C:
+    :param class_name_idx_mapping:
+    :return:
+    """
+    bboxes = augmented_annotation['bboxes']
+    (width, height) = (augmented_annotation['width'], augmented_annotation['height'])
     # get image dimensions for resizing
     (resized_width, resized_height) = data_generators.get_new_image_size(width, height, C.image_min_size)
     # ground truth bbox 在 feature map 上的坐标
@@ -66,7 +77,7 @@ def calc_iou(rois, annotation_data_ang, C, class_name_idx_mapping):
                 gcy = (gtb[best_bbox_idx, 2] + gtb[best_bbox_idx, 3]) / 2.0
                 gw = gtb[best_bbox_idx, 1] - gtb[best_bbox_idx, 0]
                 gh = (gtb[best_bbox_idx, 3] - gtb[best_bbox_idx, 2])
-                # proposal bbox 的中心点坐标
+                # roi 的中心点坐标
                 cx = x1 + w / 2.0
                 cy = y1 + h / 2.0
                 # 计算梯度
@@ -75,7 +86,7 @@ def calc_iou(rois, annotation_data_ang, C, class_name_idx_mapping):
                 tw = np.log(gw / float(w))
                 th = np.log(gh / float(h))
             else:
-                print('roi = {}'.format(best_iou))
+                logger.error('roi={}'.format(best_iou))
                 raise RuntimeError
 
         class_idx = class_name_idx_mapping[class_name]
@@ -87,6 +98,7 @@ def calc_iou(rois, annotation_data_ang, C, class_name_idx_mapping):
         regr_label_valid = [0] * 4 * (len(class_name_idx_mapping) - 1)
         if class_name != 'bg':
             regr_pos = 4 * class_idx
+            # UNCLEAR: C.classifier_regr_std 的作用是？
             sx, sy, sw, sh = C.classifier_regr_std
             regr_label[regr_pos:4 + regr_pos] = [sx * tx, sy * ty, sw * tw, sh * th]
             regr_label_valid[regr_pos:4 + regr_pos] = [1, 1, 1, 1]
@@ -195,14 +207,6 @@ def non_max_suppression_fast(boxes, probs, overlap_thresh=0.9, max_boxes=300):
     if len(boxes) == 0:
         return []
 
-    # if the bounding boxes integers, convert them to floats --
-    # this is important since we'll be doing a bunch of divisions
-    if boxes.dtype.kind == "i":
-        boxes = boxes.astype("float")
-
-    # initialize the list of picked indexes
-    pick = []
-
     # grab the coordinates of the bounding boxes
     x1 = boxes[:, 0]
     y1 = boxes[:, 1]
@@ -215,6 +219,14 @@ def non_max_suppression_fast(boxes, probs, overlap_thresh=0.9, max_boxes=300):
     np.testing.assert_array_less(x1, x2)
     np.testing.assert_array_less(y1, y2)
 
+    # if the bounding boxes integers, convert them to floats --
+    # this is important since we'll be doing a bunch of divisions
+    if boxes.dtype.kind == "i":
+        boxes = boxes.astype("float")
+
+    # initialize the list of picked indexes
+    pick = []
+
     # calculate the areas
     # 数组的每个元素分别相乘 [area1,area2...]
     area = (x2 - x1) * (y2 - y1)
@@ -223,33 +235,44 @@ def non_max_suppression_fast(boxes, probs, overlap_thresh=0.9, max_boxes=300):
     # 如最后一个元素的值表示的是原数组最大值的下标,第一个元素的值表示原数组最小值的下标
     # https://docs.scipy.org/doc/numpy/reference/generated/numpy.argsort.html
     idxs = np.argsort(probs)
-    # keep looping while some indexes still remain in the indexes
-    # list
+    # keep looping while some indexes still remain in the indexes list
     while len(idxs) > 0:
         # grab the last index in the indexes list and add the
         # index value to the list of picked indexes
         last = len(idxs) - 1
-        # 最大面积的 box 的下标
+        # 最大 prob 的 box 的下标
         i = idxs[last]
         pick.append(i)
 
-        # 计算最大面积的 box 和其他所有 box 的交集
-        # shape (last,)
+        # 计算最大 prob 的 box 和其他所有 box 的交集
+        # x1 的 shape (num_boxes,), x1[i] 的 shape 为 (1,)
+        # x1[idxs[:last]] 的 shape 为 (last, )
+        # x1_intersection 的 shape 为 (last, )
+        #  _____________________
+        # |  (max_x1,max_y1)    |
+        # |                 ____|________________
+        # |                |    |                |
+        # |                |    |                |
+        # |                |    |                |
+        # |________________|____|(min_x2,min_y2) |
+        #                  |                     |
+        #                  |_____________________|
         x1_intersection = np.maximum(x1[i], x1[idxs[:last]])
         y1_intersection = np.maximum(y1[i], y1[idxs[:last]])
         x2_intersection = np.minimum(x2[i], x2[idxs[:last]])
         y2_intersection = np.minimum(y2[i], y2[idxs[:last]])
         w_intersection = np.maximum(0, x2_intersection - x1_intersection)
         h_intersection = np.maximum(0, y2_intersection - y1_intersection)
+        # shape 为 (last,)
         area_intersection = w_intersection * h_intersection
-        # 计算最大面积的 box 和其他所有 box 的并集
+        # 计算最大 prob 的 box 和其他所有 box 的并集
         area_union = area[i] + area[idxs[:last]] - area_intersection
-
         # compute the ratio of overlap, 就是 IOU
+        # shape 为 (last,)
         overlap = area_intersection / (area_union + 1e-6)
 
         # delete all indexes from the index list that have
-        # 删除掉和当前最大面积的 box 重叠超过阈值的 box
+        # 删除当前最大 prob 的 box 和当前最大 prob 的 box 重叠超过阈值的其他 box
         idxs = np.delete(idxs, np.concatenate(([last],
                                                np.where(overlap > overlap_thresh)[0])))
 
@@ -270,7 +293,7 @@ def rpn_to_roi(rpn_class, rpn_regr, C, max_rois=300, overlap_thresh=0.9):
     :param C: config 对象
     :param max_rois: 最大 roi 个数
     :param overlap_thresh:
-    :return:
+    :return: 返回 roi 在 feature map 上的坐标 (x1,y1,x2,y2)
     """
     # 在生成 rpn target 时乘过 C.std_scaling
     rpn_regr = rpn_regr / C.std_scaling
@@ -341,6 +364,6 @@ def rpn_to_roi(rpn_class, rpn_regr, C, max_rois=300, overlap_thresh=0.9):
     all_rois = np.delete(all_rois, idxs, axis=0)
     all_probs = np.delete(all_probs, idxs, axis=0)
 
-    result = non_max_suppression_fast(all_rois, all_probs, overlap_thresh=overlap_thresh, max_boxes=max_rois)[0]
+    rois = non_max_suppression_fast(all_rois, all_probs, overlap_thresh=overlap_thresh, max_boxes=max_rois)[0]
 
-    return result
+    return rois

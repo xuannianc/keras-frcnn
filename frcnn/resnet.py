@@ -6,7 +6,7 @@ Adapted from code contributed by BigMoyan.
 '''
 
 from keras.layers import Input, Add, Dense, Activation, Flatten, Conv2D, MaxPooling2D, ZeroPadding2D, \
-    AveragePooling2D, TimeDistributed
+    AveragePooling2D, TimeDistributed, BatchNormalization
 
 from keras import backend as K
 
@@ -44,16 +44,16 @@ def identity_block(input_tensor, kernel_size, filters, stage, block, trainable=T
     bn_name_base = 'bn' + str(stage) + block + '_branch'
 
     x = Conv2D(nb_filter1, (1, 1), name=conv_name_base + '2a', trainable=trainable)(input_tensor)
-    x = FixedBatchNormalization(axis=bn_axis, name=bn_name_base + '2a')(x)
+    x = BatchNormalization(axis=bn_axis, name=bn_name_base + '2a')(x)
     x = Activation('relu')(x)
 
     x = Conv2D(nb_filter2, (kernel_size, kernel_size), padding='same', name=conv_name_base + '2b',
                       trainable=trainable)(x)
-    x = FixedBatchNormalization(axis=bn_axis, name=bn_name_base + '2b')(x)
+    x = BatchNormalization(axis=bn_axis, name=bn_name_base + '2b')(x)
     x = Activation('relu')(x)
 
     x = Conv2D(nb_filter3, (1, 1), name=conv_name_base + '2c', trainable=trainable)(x)
-    x = FixedBatchNormalization(axis=bn_axis, name=bn_name_base + '2c')(x)
+    x = BatchNormalization(axis=bn_axis, name=bn_name_base + '2c')(x)
 
     x = Add()([x, input_tensor])
     x = Activation('relu')(x)
@@ -71,18 +71,18 @@ def identity_block_td(input_tensor, kernel_size, filters, stage, block, trainabl
 
     x = TimeDistributed(Conv2D(nb_filter1, (1, 1), trainable=trainable, kernel_initializer='normal'),
                         name=conv_name_base + '2a')(input_tensor)
-    x = TimeDistributed(FixedBatchNormalization(axis=bn_axis), name=bn_name_base + '2a')(x)
+    x = TimeDistributed(BatchNormalization(axis=bn_axis), name=bn_name_base + '2a')(x)
     x = Activation('relu')(x)
 
     x = TimeDistributed(
         Conv2D(nb_filter2, (kernel_size, kernel_size), trainable=trainable, kernel_initializer='normal',
                       padding='same'), name=conv_name_base + '2b')(x)
-    x = TimeDistributed(FixedBatchNormalization(axis=bn_axis), name=bn_name_base + '2b')(x)
+    x = TimeDistributed(BatchNormalization(axis=bn_axis), name=bn_name_base + '2b')(x)
     x = Activation('relu')(x)
 
     x = TimeDistributed(Conv2D(nb_filter3, (1, 1), trainable=trainable, kernel_initializer='normal'),
                         name=conv_name_base + '2c')(x)
-    x = TimeDistributed(FixedBatchNormalization(axis=bn_axis), name=bn_name_base + '2c')(x)
+    x = TimeDistributed(BatchNormalization(axis=bn_axis), name=bn_name_base + '2c')(x)
 
     x = Add()([x, input_tensor])
     x = Activation('relu')(x)
@@ -99,20 +99,20 @@ def conv_block(input_tensor, kernel_size, filters, stage, block, strides=(2, 2),
 
     x = Conv2D(nb_filter1, (1, 1), strides=strides, name=conv_name_base + '2a', trainable=trainable)(
         input_tensor)
-    x = FixedBatchNormalization(axis=bn_axis, name=bn_name_base + '2a')(x)
+    x = BatchNormalization(axis=bn_axis, name=bn_name_base + '2a')(x)
     x = Activation('relu')(x)
 
     x = Conv2D(nb_filter2, (kernel_size, kernel_size), padding='same', name=conv_name_base + '2b',
                       trainable=trainable)(x)
-    x = FixedBatchNormalization(axis=bn_axis, name=bn_name_base + '2b')(x)
+    x = BatchNormalization(axis=bn_axis, name=bn_name_base + '2b')(x)
     x = Activation('relu')(x)
 
     x = Conv2D(nb_filter3, (1, 1), name=conv_name_base + '2c', trainable=trainable)(x)
-    x = FixedBatchNormalization(axis=bn_axis, name=bn_name_base + '2c')(x)
+    x = BatchNormalization(axis=bn_axis, name=bn_name_base + '2c')(x)
 
     shortcut = Conv2D(nb_filter3, (1, 1), strides=strides, name=conv_name_base + '1', trainable=trainable)(
         input_tensor)
-    shortcut = FixedBatchNormalization(axis=bn_axis, name=bn_name_base + '1')(shortcut)
+    shortcut = BatchNormalization(axis=bn_axis, name=bn_name_base + '1')(shortcut)
 
     x = Add()([x, shortcut])
     x = Activation('relu')(x)
@@ -130,22 +130,22 @@ def conv_block_td(input_tensor, kernel_size, filters, stage, block, strides=(2, 
     x = TimeDistributed(
         Conv2D(nb_filter1, (1, 1), strides=strides, trainable=trainable, kernel_initializer='normal'),
         name=conv_name_base + '2a')(input_tensor)
-    x = TimeDistributed(FixedBatchNormalization(axis=bn_axis), name=bn_name_base + '2a')(x)
+    x = TimeDistributed(BatchNormalization(axis=bn_axis), name=bn_name_base + '2a')(x)
     x = Activation('relu')(x)
 
     x = TimeDistributed(Conv2D(nb_filter2, (kernel_size, kernel_size), padding='same', trainable=trainable,
                                       kernel_initializer='normal'), name=conv_name_base + '2b')(x)
-    x = TimeDistributed(FixedBatchNormalization(axis=bn_axis), name=bn_name_base + '2b')(x)
+    x = TimeDistributed(BatchNormalization(axis=bn_axis), name=bn_name_base + '2b')(x)
     x = Activation('relu')(x)
 
     x = TimeDistributed(Conv2D(nb_filter3, (1, 1), kernel_initializer='normal'), name=conv_name_base + '2c',
                         trainable=trainable)(x)
-    x = TimeDistributed(FixedBatchNormalization(axis=bn_axis), name=bn_name_base + '2c')(x)
+    x = TimeDistributed(BatchNormalization(axis=bn_axis), name=bn_name_base + '2c')(x)
 
     shortcut = TimeDistributed(
         Conv2D(nb_filter3, (1, 1), strides=strides, trainable=trainable, kernel_initializer='normal'),
         name=conv_name_base + '1')(input_tensor)
-    shortcut = TimeDistributed(FixedBatchNormalization(axis=bn_axis), name=bn_name_base + '1')(shortcut)
+    shortcut = TimeDistributed(BatchNormalization(axis=bn_axis), name=bn_name_base + '1')(shortcut)
 
     x = Add()([x, shortcut])
     x = Activation('relu')(x)
@@ -168,7 +168,7 @@ def base_net(input_tensor=None, trainable=False):
 
     x = ZeroPadding2D((3, 3))(image_input)
     x = Conv2D(64, (7, 7), strides=(2, 2), name='conv1', trainable=trainable)(x)
-    x = FixedBatchNormalization(axis=bn_axis, name='bn_conv1')(x)
+    x = BatchNormalization(axis=bn_axis, name='bn_conv1')(x)
     x = Activation('relu')(x)
     x = MaxPooling2D((3, 3), strides=(2, 2))(x)
 

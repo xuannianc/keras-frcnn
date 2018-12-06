@@ -35,7 +35,8 @@ parser.add_option("--rot", "--rotate", dest="rotate",
                   action="store_true", default=False)
 parser.add_option("--image_min_size", type="int", dest="image_min_size", help="Min side of image to resize.",
                   default=800)
-parser.add_option("--num_epochs", type="int", dest="num_epochs", help="Number of epochs.", default=2000)
+parser.add_option("--num_epochs", type="int", dest="num_epochs", help="Number of epochs.", default=1000)
+parser.add_option("--num_steps", type="int", dest="num_steps", help="Number of steps per epoch.", default=2000)
 parser.add_option("--config_output_path", dest="config_output_path",
                   help="Location to store all the metadata related to the training (to be used when testing).",
                   default="config.pickle")
@@ -77,7 +78,7 @@ else:
 if options.model_weight_path:
     C.model_weight_path = options.model_weight_path
 else:
-    C.model_weight_path = 'faster_rcnn_{}_weight.hdf5'.format(C.network)
+    C.model_weight_path = 'faster_rcnn_{}_{{}}_{{}}_{{}}_{{}}_{{}}.hdf5'.format(C.network)
 
 # check if base weight path was passed via command line
 if options.base_net_weight_path:
@@ -157,95 +158,86 @@ model.compile(optimizer='sgd', loss='mae')
 
 num_epochs = int(options.num_epochs)
 # 每 1000 个 epoch 输出详细日志保存模型
-num_iters = 1000
-# 迭代的序号
-iter_idx = 0
+num_steps = int(options.num_steps)
+step_idx = 0
 # 每个 epoch 的 positive roi 的个数
 num_pos_rois_per_epoch = []
-losses = np.zeros((num_iters, 5))
+losses = np.zeros((num_steps, 5))
 start_time = time.time()
 best_loss = np.Inf
 
 logger.info('Starting training...')
 for epoch_idx in range(num_epochs):
-    progbar = generic_utils.Progbar(num_iters)
-    print('Epoch {}/{}'.format(epoch_idx + 1, num_epochs))
+    progbar = generic_utils.Progbar(num_steps)
+    logger.info('Epoch {}/{}'.format(epoch_idx + 1, num_epochs))
     while True:
         try:
-            X1, Y1, aug_annotation_data = next(train_data_gen)
+            X1, Y1, augmented_annotation = next(train_data_gen)
             # loss_rpn = [loss,rpn_out_class_loss,rpn_out_regress_loss], 名字的组成有最后一层的 name + '_loss'
             # 这里还要注意 label 的 shape 可以和模型输出的 shape 不一样,这取决于 loss function
             rpn_loss = model_rpn.train_on_batch(X1, Y1)
             # [(1,m,n,9),(1,m,n,36)]
             rpn_prediction = model_rpn.predict_on_batch(X1)
-            # (boxes,probs) boxes:(None,4) (x1,y1,x2,y2) probs:(None,1)
+            # rois 的 shape 为 (None,4) (x1,y1,x2,y2)
             rois = roi_helpers.rpn_to_roi(rpn_prediction[0], rpn_prediction[1], C, overlap_thresh=0.7, max_rois=300)
             # NOTE: calc_iou converts from (x1,y1,x2,y2) to (x,y,w,h) format
             # X2: x_roi Y21: y_class Y22: y_regr
-            X2, Y21, Y22, IouS = roi_helpers.calc_iou(rois, aug_annotation_data, C, class_name_idx_mapping)
+            X2, Y21, Y22, IoUs = roi_helpers.calc_iou(rois, augmented_annotation, C, class_name_idx_mapping)
 
             if X2 is None:
                 num_pos_rois_per_epoch.append(0)
                 continue
             # 假设 Y21 为 np.array([[[0,0,0,1],[0,0,0,0]]]),np.where(Y21[0,:,-1]==1) 返回 (array([0]),)
-            neg_idxes = np.where(Y21[0, :, -1] == 1)
-            pos_idxes = np.where(Y21[0, :, -1] == 0)
+            # Y21[0,:,-1] 表示的 class 为 'bg' 的值, 若为 1 表示 negative, 为 0 表示 positive
+            neg_roi_idxs = np.where(Y21[0, :, -1] == 1)[0]
+            pos_roi_idxs = np.where(Y21[0, :, -1] == 0)[0]
 
-            if len(neg_idxes) > 0:
-                neg_idxes = neg_idxes[0]
-            else:
-                neg_idxes = []
-
-            if len(pos_idxes) > 0:
-                pos_idxes = pos_idxes[0]
-            else:
-                pos_idxes = []
-
-            num_pos_rois_per_epoch.append((len(pos_idxes)))
+            num_pos_rois_per_epoch.append((len(pos_roi_idxs)))
 
             if C.num_rois > 1:
                 # 如果正样本个数不足 num_rois//2,全部送入训练
-                if len(pos_idxes) < C.num_rois // 2:
-                    selected_pos_idxes = pos_idxes.tolist()
+                if len(pos_roi_idxs) < C.num_rois // 2:
+                    selected_pos_idxs = pos_roi_idxs.tolist()
                 # 如果正样本个数超过 num_rois//2, 随机抽取 num_rois//2 个 送入训练
                 else:
-                    selected_pos_idxes = np.random.choice(pos_idxes, C.num_rois // 2, replace=False).tolist()
+                    # replace=False 表示不重复, without replacement
+                    selected_pos_idxs = np.random.choice(pos_roi_idxs, C.num_rois // 2, replace=False).tolist()
                 try:
-                    selected_neg_idxes = np.random.choice(neg_idxes, C.num_rois - len(selected_pos_idxes),
-                                                          replace=False).tolist()
+                    selected_neg_idxs = np.random.choice(neg_roi_idxs, C.num_rois - len(selected_pos_idxs),
+                                                         replace=False).tolist()
                 except:
-                    selected_neg_idxes = np.random.choice(neg_idxes, C.num_rois - len(selected_pos_idxes),
-                                                          replace=True).tolist()
+                    selected_neg_idxs = np.random.choice(neg_roi_idxs, C.num_rois - len(selected_pos_idxs),
+                                                         replace=True).tolist()
 
-                selected_idxes = selected_pos_idxes + selected_neg_idxes
+                selected_idxs = selected_pos_idxs + selected_neg_idxs
             else:
                 # in the extreme case where num_rois = 1, we pick a random pos or neg sample
-                selected_pos_idxes = pos_idxes.tolist()
-                selected_neg_idxes = neg_idxes.tolist()
+                selected_pos_idxs = pos_roi_idxs.tolist()
+                selected_neg_idxs = neg_roi_idxs.tolist()
                 if np.random.randint(0, 2):
-                    selected_idxes = random.choice(neg_idxes)
+                    selected_idxs = random.choice(neg_roi_idxs)
                 else:
-                    selected_idxes = random.choice(pos_idxes)
+                    selected_idxs = random.choice(pos_roi_idxs)
 
-            rcnn_loss = model_rcnn.train_on_batch([X1, X2[:, selected_idxes, :]],
-                                                  [Y21[:, selected_idxes, :], Y22[:, selected_idxes, :]])
+            rcnn_loss = model_rcnn.train_on_batch([X1, X2[:, selected_idxs, :]],
+                                                  [Y21[:, selected_idxs, :], Y22[:, selected_idxs, :]])
 
-            losses[iter_idx, 0] = rpn_loss[1]
-            losses[iter_idx, 1] = rpn_loss[2]
-            losses[iter_idx, 2] = rcnn_loss[1]
-            losses[iter_idx, 3] = rcnn_loss[2]
+            losses[step_idx, 0] = rpn_loss[1]
+            losses[step_idx, 1] = rpn_loss[2]
+            losses[step_idx, 2] = rcnn_loss[1]
+            losses[step_idx, 3] = rcnn_loss[2]
             # accuracy
-            losses[iter_idx, 4] = rcnn_loss[3]
+            losses[step_idx, 4] = rcnn_loss[3]
 
-            iter_idx += 1
+            step_idx += 1
 
-            progbar.update(iter_idx,
-                           [('rpn_class_loss', np.mean(losses[:iter_idx, 0])),
-                            ('rpn_regr_loss', np.mean(losses[:iter_idx, 1])),
-                            ('rcnn_class_loss', np.mean(losses[:iter_idx, 2])),
-                            ('rcnn_regr_loss', np.mean(losses[:iter_idx, 3]))])
+            progbar.update(step_idx,
+                           [('rpn_class_loss', np.mean(losses[:step_idx, 0])),
+                            ('rpn_regr_loss', np.mean(losses[:step_idx, 1])),
+                            ('rcnn_class_loss', np.mean(losses[:step_idx, 2])),
+                            ('rcnn_regr_loss', np.mean(losses[:step_idx, 3]))])
 
-            if iter_idx == num_iters:
+            if step_idx == num_steps:
                 rpn_class_loss = np.mean(losses[:, 0])
                 rpn_regr_loss = np.mean(losses[:, 1])
                 rcnn_class_loss = np.mean(losses[:, 2])
@@ -253,29 +245,32 @@ for epoch_idx in range(num_epochs):
                 rcnn_class_acc = np.mean(losses[:, 4])
                 mean_num_pos_rois = float(sum(num_pos_rois_per_epoch)) / len(num_pos_rois_per_epoch)
                 num_pos_rois_per_epoch = []
+                curr_loss = rpn_class_loss + rpn_regr_loss + rcnn_class_loss + rcnn_regr_loss
 
                 if C.verbose:
-                    print('Mean number of bounding boxes from RPN overlapping ground truth boxes: {}'.format(
+                    logger.debug('Mean number of bounding boxes from RPN overlapping ground truth boxes: {}'.format(
                         mean_num_pos_rois))
                     if mean_num_pos_rois == 0:
-                        print(
+                        logger.warning(
                             'RPN is not producing bounding boxes that overlap the ground truth boxes. Check RPN settings or keep training.')
-                    print('RPN Classification Loss: {}'.format(rpn_class_loss))
-                    print('RPN Regression Loss : {}'.format(rpn_regr_loss))
-                    print('RCNN Classification Loss: {}'.format(rcnn_class_loss))
-                    print('RCNN Regression Loss: {}'.format(rcnn_regr_loss))
-                    print('RCNN Classification Accuracy: {}'.format(rcnn_class_acc))
-                    print('Elapsed time: {}'.format(time.time() - start_time))
+                    logger.debug('RPN Classification Loss: {}'.format(rpn_class_loss))
+                    logger.debug('RPN Regression Loss : {}'.format(rpn_regr_loss))
+                    logger.debug('RCNN Classification Loss: {}'.format(rcnn_class_loss))
+                    logger.debug('RCNN Regression Loss: {}'.format(rcnn_regr_loss))
+                    logger.debug('Total Loss: {}'.format(curr_loss))
+                    logger.debug('RCNN Classification Accuracy: {}'.format(rcnn_class_acc))
+                    logger.debug('Elapsed time: {}'.format(time.time() - start_time))
 
-                curr_loss = rpn_class_loss + rpn_regr_loss + rcnn_class_loss + rcnn_regr_loss
-                iter_idx = 0
+                step_idx = 0
                 start_time = time.time()
 
                 if curr_loss < best_loss:
                     if C.verbose:
-                        print('Total loss decreased from {} to {}, saving weights'.format(best_loss, curr_loss))
+                        logger.debug('Total loss decreased from {} to {}, saving weights'.format(best_loss, curr_loss))
                     best_loss = curr_loss
-                    model.save_weights(C.model_weight_path)
+                    model.save_weights(
+                        C.model_weight_path.format(rpn_class_loss, rpn_regr_loss, rcnn_class_loss, rcnn_regr_loss,
+                                                   rcnn_class_acc))
                 break
 
         except Exception as e:
