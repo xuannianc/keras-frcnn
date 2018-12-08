@@ -29,7 +29,7 @@ def get_feature_map_size(width, height):
     return get_output_size(width), get_output_size(height)
 
 
-def base_net(input_tensor=None):
+def base_net(input_tensor=None, trainable=False):
     # Determine proper input shape
     input_shape = (None, None, 3)
 
@@ -72,35 +72,35 @@ def base_net(input_tensor=None):
     return x
 
 
-def rpn(base_layers, num_anchors):
+def rpn(base_net_output, num_anchors):
     x = Conv2D(512, (3, 3), padding='same', activation='relu', kernel_initializer='normal', name='rpn_conv1')(
-        base_layers)
+        base_net_output)
     rpn_class = Conv2D(num_anchors, (1, 1), activation='sigmoid', kernel_initializer='uniform', name='rpn_class')(x)
     rpn_regr = Conv2D(num_anchors * 4, (1, 1), activation='linear', kernel_initializer='zero', name='rpn_regr')(x)
     return [rpn_class, rpn_regr]
 
 
-def rcnn(base_layers, roi_input, num_rois, num_classes=21):
+def rcnn(base_net_output, rois_input, num_rois, num_classes=21):
     """
     Region-based Convolutional Neural Network
-    :param base_layers: vgg|resnet
-    :param roi_input: 输入的 rois
+    :param base_net_output: vgg|resnet output
+    :param rois_input: 输入的 rois
     :param num_rois: rois 的个数
     :param num_classes:
     :return:
     """
     pool_size = 7
     # shape (batch_size=1,num_rois,pool_size,pool_size,num_channels)
-    out_roi_pool = RoiPoolingConv(pool_size, num_rois)([base_layers, roi_input])
+    roi_pool_output = RoiPoolingConv(pool_size, num_rois)([base_net_output, rois_input])
     # TimeDistributed 的功能就是将 out_roi_pool 分成 num_rois 份,分别处理
-    out = TimeDistributed(Flatten(name='flatten'))(out_roi_pool)
+    out = TimeDistributed(Flatten(name='flatten'))(roi_pool_output)
     out = TimeDistributed(Dense(4096, activation='relu', name='fc1'))(out)
     out = TimeDistributed(Dropout(0.5))(out)
     out = TimeDistributed(Dense(4096, activation='relu', name='fc2'))(out)
     out = TimeDistributed(Dropout(0.5))(out)
-    out_class = TimeDistributed(Dense(num_classes, activation='softmax', kernel_initializer='zero'),
+    rcnn_class = TimeDistributed(Dense(num_classes, activation='softmax', kernel_initializer='zero'),
                                 name='rcnn_class')(out)
     # note: no regression target for bg class
-    out_regr = TimeDistributed(Dense(4 * (num_classes - 1), activation='linear', kernel_initializer='zero'),
+    rcnn_regr = TimeDistributed(Dense(4 * (num_classes - 1), activation='linear', kernel_initializer='zero'),
                                name='rcnn_regr')(out)
-    return [out_class, out_regr]
+    return [rcnn_class, rcnn_regr]

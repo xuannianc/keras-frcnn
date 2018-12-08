@@ -120,7 +120,7 @@ C.model_path = options.model_path
 
 image_input_shape = (None, None, 3)
 image_input = Input(shape=image_input_shape)
-roi_input = Input(shape=(C.num_rois, 4))
+rois_input = Input(shape=(C.num_rois, 4))
 
 # define the base network (resnet here, can be VGG, Inception, etc)
 base_net_output = nn.base_net(image_input)
@@ -128,9 +128,9 @@ base_net_output = nn.base_net(image_input)
 # define the RPN, built on the base layers
 num_anchors = len(C.anchor_scales) * len(C.anchor_ratios)
 rpn_output = nn.rpn(base_net_output, num_anchors)
-rcnn_output = nn.rcnn(base_net_output, roi_input, C.num_rois, num_classes=len(class_name_idx_mapping))
+rcnn_output = nn.rcnn(base_net_output, rois_input, C.num_rois, num_classes=len(class_name_idx_mapping))
 model_rpn = Model(image_input, rpn_output)
-model_rcnn = Model([image_input, roi_input], rcnn_output)
+model_rcnn = Model([image_input, rois_input], rcnn_output)
 model_rcnn.summary()
 
 logger.info('Loading weights from {}'.format(C.model_path))

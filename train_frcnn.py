@@ -124,21 +124,21 @@ val_data_gen = data_generators.get_anchor_gt(val_annotations, classes_count, C, 
 
 input_shape = (None, None, 3)
 image_input = Input(shape=input_shape)
-roi_input = Input(shape=(None, 4))
+rois_input = Input(shape=(None, 4))
 # define the base network (resnet here, can be VGG, Inception, etc)
-base_net_output = nn.base_net(image_input)
+base_net_output = nn.base_net(image_input, trainable=True)
 # define the RPN, built on the base net
 num_anchors = len(C.anchor_scales) * len(C.anchor_ratios)
 rpn_output = nn.rpn(base_net_output, num_anchors)
 # [(batch_size=1, num_rois, num_classes),(batch_size=1, num_rois, 4 * (num_classes -1))
 # 第二个元素是 regr 返回的值, 其中不包括 'bg'
-rcnn_output = nn.rcnn(base_net_output, roi_input, C.num_rois, num_classes=len(classes_count))
+rcnn_output = nn.rcnn(base_net_output, rois_input, C.num_rois, num_classes=len(classes_count))
 model_rpn = Model(image_input, rpn_output)
 model_rpn.summary()
-model_rcnn = Model([image_input, roi_input], rcnn_output)
+model_rcnn = Model([image_input, rois_input], rcnn_output)
 model_rcnn.summary()
 # this is a model that holds both the RPN and the RCNN, used to load/save weights for the models
-model = Model([image_input, roi_input], rpn_output + rcnn_output)
+model = Model([image_input, rois_input], rpn_output + rcnn_output)
 
 try:
     logger.info('loading weights from {}'.format(C.base_net_weights_path))

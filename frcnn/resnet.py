@@ -200,9 +200,9 @@ def resnet50_last_layers(x, trainable=False):
     return x
 
 
-def rpn(base_layers, num_anchors):
+def rpn(base_net_output, num_anchors):
     x = Conv2D(512, (3, 3), padding='same', activation='relu', kernel_initializer='normal', name='rpn_conv1')(
-        base_layers)
+        base_net_output)
     rpn_class = Conv2D(num_anchors, (1, 1), activation='sigmoid', kernel_initializer='uniform',
                             name='rpn_class')(x)
     rpn_regr = Conv2D(num_anchors * 4, (1, 1), activation='linear', kernel_initializer='zero',
@@ -210,16 +210,16 @@ def rpn(base_layers, num_anchors):
     return [rpn_class, rpn_regr]
 
 
-def rcnn(base_layers, input_rois, num_rois, num_classes=21):
+def rcnn(base_net_output, rois_input, num_rois, num_classes=21):
     pool_size = 14
     # (batch_size=1, num_rois, pool_size, pool_size, num_channels)
-    out_roi_pool = RoiPoolingConv(pool_size, num_rois)([base_layers, input_rois])
+    roi_pool_output = RoiPoolingConv(pool_size, num_rois)([base_net_output, rois_input])
     # (batch_size=1, num_rois, 1, 1, 2048)
-    out = resnet50_last_layers(out_roi_pool, trainable=True)
+    out = resnet50_last_layers(roi_pool_output, trainable=True)
     out = TimeDistributed(Flatten())(out)
-    out_class = TimeDistributed(Dense(num_classes, activation='softmax', kernel_initializer='zero'),
+    rcnn_class = TimeDistributed(Dense(num_classes, activation='softmax', kernel_initializer='zero'),
                                 name='rcnn_class')(out)
     # NOTE: no regression target for bg class
-    out_regr = TimeDistributed(Dense(4 * (num_classes - 1), activation='linear', kernel_initializer='zero'),
+    rcnn_regr = TimeDistributed(Dense(4 * (num_classes - 1), activation='linear', kernel_initializer='zero'),
                                name='rcnn_regr')(out)
-    return [out_class, out_regr]
+    return [rcnn_class, rcnn_regr]
