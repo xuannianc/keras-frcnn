@@ -8,7 +8,7 @@ from log import logger
 
 def calc_iou(rois, augmented_annotation, C, class_name_idx_mapping):
     """
-    分别计算每一个 roi 和所有 gt_bboxes 的 best iou
+    分别计算每一个 roi 和所有 gt_bboxes 的 best iou, 并根据 best_iou 判断 roi 的类型
         如果 best_iou < C.rcnn_min_overlap, 忽略此 roi
         如果 C.rcnn_min_overlap <= best_iou < C.rcnn_max_overlap, 设置该 roi 的 class='bg',regr=[0,0,0,0]
         如果 C.rcnn_max_overlap <= best_iou, 设置 best_iou 对应的 gt_bbox 的 class 为该 roi 的 class, 并计算 regr
@@ -16,22 +16,27 @@ def calc_iou(rois, augmented_annotation, C, class_name_idx_mapping):
     :param augmented_annotation:
     :param C:
     :param class_name_idx_mapping:
-    :return:
+    :return: X,Y21,Y22 X: 表示合格的 rois 组成的数组作为 rcnn 的输入, (1, num_rois,4)
+        Y21: 表示对所有 rois 分类的结果, (1, num_rois, num_classes)
+        Y22: shape 为 (1,num_rois, (num_classes -1) * 4 * 2)
+            前 (num_classes-1)*4 表示 rois 是否是 bg, 不参与回归的 loss 计算
+            后 (num_classes-1)*4 表示对所有非 bg 的 rois 的回归梯度
+        IoUs: 表示每一个 roi 和所有 gt_bboxes 的 best iou
     """
     bboxes = augmented_annotation['bboxes']
     (width, height) = (augmented_annotation['width'], augmented_annotation['height'])
     # get image dimensions for resizing
     (resized_width, resized_height) = data_generators.get_new_image_size(width, height, C.image_min_size)
     # ground truth bbox 在 feature map 上的坐标
-    gtb = np.zeros((len(bboxes), 4))
+    gt_bboxes = np.zeros((len(bboxes), 4))
     width_ratio = resized_height / float(width)
     height_ratio = resized_height / float(height)
     for bbox_idx, bbox in enumerate(bboxes):
         # get the GT box coordinates, and resize to account for image resizing
-        gtb[bbox_idx, 0] = int(round(bbox['x1'] * width_ratio / C.rpn_stride))
-        gtb[bbox_idx, 1] = int(round(bbox['x2'] * width_ratio / C.rpn_stride))
-        gtb[bbox_idx, 2] = int(round(bbox['y1'] * height_ratio / C.rpn_stride))
-        gtb[bbox_idx, 3] = int(round(bbox['y2'] * height_ratio / C.rpn_stride))
+        gt_bboxes[bbox_idx, 0] = int(round(bbox['x1'] * width_ratio / C.rpn_stride))
+        gt_bboxes[bbox_idx, 1] = int(round(bbox['x2'] * width_ratio / C.rpn_stride))
+        gt_bboxes[bbox_idx, 2] = int(round(bbox['y1'] * height_ratio / C.rpn_stride))
+        gt_bboxes[bbox_idx, 3] = int(round(bbox['y2'] * height_ratio / C.rpn_stride))
 
     x_roi = []
     # 分类模型的 y,是 one-hot 形式,(None,len(class_name_idx_mapping))
@@ -53,7 +58,7 @@ def calc_iou(rois, augmented_annotation, C, class_name_idx_mapping):
         best_bbox_idx = -1
         # roi 和每一个 bbox 计算 iou, 取 best_iou
         for bbox_idx in range(len(bboxes)):
-            current_iou = data_generators.iou([gtb[bbox_idx, 0], gtb[bbox_idx, 2], gtb[bbox_idx, 1], gtb[bbox_idx, 3]],
+            current_iou = data_generators.iou([gt_bboxes[bbox_idx, 0], gt_bboxes[bbox_idx, 2], gt_bboxes[bbox_idx, 1], gt_bboxes[bbox_idx, 3]],
                                               [x1, y1, x2, y2])
             if current_iou > best_iou:
                 best_iou = current_iou
@@ -73,10 +78,10 @@ def calc_iou(rois, augmented_annotation, C, class_name_idx_mapping):
             elif C.rcnn_max_overlap <= best_iou:
                 class_name = bboxes[best_bbox_idx]['class']
                 # ground truth bbox 的中心点坐标
-                gcx = (gtb[best_bbox_idx, 0] + gtb[best_bbox_idx, 1]) / 2.0
-                gcy = (gtb[best_bbox_idx, 2] + gtb[best_bbox_idx, 3]) / 2.0
-                gw = gtb[best_bbox_idx, 1] - gtb[best_bbox_idx, 0]
-                gh = (gtb[best_bbox_idx, 3] - gtb[best_bbox_idx, 2])
+                gcx = (gt_bboxes[best_bbox_idx, 0] + gt_bboxes[best_bbox_idx, 1]) / 2.0
+                gcy = (gt_bboxes[best_bbox_idx, 2] + gt_bboxes[best_bbox_idx, 3]) / 2.0
+                gw = gt_bboxes[best_bbox_idx, 1] - gt_bboxes[best_bbox_idx, 0]
+                gh = (gt_bboxes[best_bbox_idx, 3] - gt_bboxes[best_bbox_idx, 2])
                 # roi 的中心点坐标
                 cx = x1 + w / 2.0
                 cy = y1 + h / 2.0
@@ -119,22 +124,37 @@ def calc_iou(rois, augmented_annotation, C, class_name_idx_mapping):
 
 
 def apply_regr(x, y, w, h, tx, ty, tw, th):
+    """
+    对单个矩形框进行修正
+    :param x:
+    :param y:
+    :param w:
+    :param h:
+    :param tx:
+    :param ty:
+    :param tw:
+    :param th:
+    :return:
+    """
     try:
         cx = x + w / 2.
         cy = y + h / 2.
-        cx1 = tx * w + cx
-        cy1 = ty * h + cy
-        w1 = math.exp(tw) * w
-        h1 = math.exp(th) * h
-        x1 = cx1 - w1 / 2.
-        y1 = cy1 - h1 / 2.
-        x1 = int(round(x1))
-        y1 = int(round(y1))
-        w1 = int(round(w1))
-        h1 = int(round(h1))
-
-        return x1, y1, w1, h1
-
+        # rcx,rcy 表示修正后的矩形框的中心点 x,y
+        # (rcx - cx) / w = tx
+        rcx = tx * w + cx
+        rcy = ty * h + cy
+        # rw,rh 表示修正后的矩形框的宽和高
+        # log(rw / w) = tw
+        rw = math.exp(tw) * w
+        rh = math.exp(th) * h
+        # 左上角的点的 x,y
+        rx = rcx - rw / 2.
+        ry = rcy - rh / 2.
+        rx = int(round(rx))
+        ry = int(round(ry))
+        rw = int(round(rw))
+        rh = int(round(rh))
+        return rx, ry, rw, rh
     except ValueError:
         return x, y, w, h
     except OverflowError:
@@ -146,10 +166,10 @@ def apply_regr(x, y, w, h, tx, ty, tw, th):
 
 def apply_regr_np(X, T):
     """
-    根据回归梯度进行校正
-    :param X: anchor 的坐标, shape: m * n * 4
-    :param T: regr 梯度, shape: m * n * 4
-    :return: 修正后的 anchor 的坐标 array([x1,y1,x2,y2]...)
+    根据回归梯度对所有的 anchor 进行校正
+    :param X: anchor 的坐标, shape 为 (m, n, 4)
+    :param T: regr 梯度, shape 为 (m, n, 4)
+    :return: 修正后的 anchor 的坐标 array([x,y,w,h]...), shape 为 (m, n, 4)
     """
     try:
         height, width = X.shape[:2]
@@ -163,11 +183,11 @@ def apply_regr_np(X, T):
         ty = T[:, :, 1]
         tw = T[:, :, 2]
         th = T[:, :, 3]
-        # anchor 中心点坐标
+        # anchor 的中心点坐标 x,y
         cxa = xa + wa / 2.
         cya = ya + ha / 2.
         # tx = (cxg - cxa) / wa
-        # groud truth bbox 的中心点 x,y
+        # rectified_anchor 的中心点坐标 x,y
         cxg = tx * wa + cxa
         cyg = ty * ha + cya
         # tw = log(wg / wa)
@@ -185,8 +205,8 @@ def apply_regr_np(X, T):
         yg = yg.reshape(height, width, 1)
         wg = wg.reshape(height, width, 1)
         hg = hg.reshape(height, width, 1)
-        rectified_anchor_cordinates = np.concatenate((xg, yg, wg, hg), axis=-1)
-        return rectified_anchor_cordinates
+        rectified_anchor_coordinates = np.concatenate((xg, yg, wg, hg), axis=-1)
+        return rectified_anchor_coordinates
     except Exception as e:
         logger.exception(e)
         return X
@@ -195,17 +215,17 @@ def apply_regr_np(X, T):
 def non_max_suppression_fast(boxes, probs, overlap_thresh=0.9, max_boxes=300):
     """
 
-    :param boxes: proposal 的 box 的坐标 [[x1,y1,x2,y2]...]
-    :param probs: box 包含物体的概率 [p1,p2...]
+    :param boxes: proposal 的 box 的坐标 np.array[[x1,y1,x2,y2]...]
+    :param probs: box 包含物体的概率 np.array([p1,p2...])
     :param overlap_thresh: 覆盖阈值
     :param max_boxes: 最大返回的 box 个数
-    :return:
+    :return: filtered_boxes and related probs
     """
     # code used from here: http://www.pyimagesearch.com/2015/02/16/faster-non-maximum-suppression-python/
     # https://www.pyimagesearch.com/2014/11/17/non-maximum-suppression-object-detection-python
     # if there are no boxes, return an empty list
     if len(boxes) == 0:
-        return []
+        return np.array([]), np.array([])
 
     # grab the coordinates of the bounding boxes
     x1 = boxes[:, 0]
@@ -240,7 +260,7 @@ def non_max_suppression_fast(boxes, probs, overlap_thresh=0.9, max_boxes=300):
         # grab the last index in the indexes list and add the
         # index value to the list of picked indexes
         last = len(idxs) - 1
-        # 最大 prob 的 box 的下标
+        # 最大 prob 的 box 在原 boxes 中的下标
         i = idxs[last]
         pick.append(i)
 
@@ -257,6 +277,7 @@ def non_max_suppression_fast(boxes, probs, overlap_thresh=0.9, max_boxes=300):
         # |________________|____|(min_x2,min_y2) |
         #                  |                     |
         #                  |_____________________|
+        # x1[idxs[:last]] 其实这 last 个 x1 就已经按照 probs 排好序了
         x1_intersection = np.maximum(x1[i], x1[idxs[:last]])
         y1_intersection = np.maximum(y1[i], y1[idxs[:last]])
         x2_intersection = np.minimum(x2[i], x2[idxs[:last]])
@@ -273,6 +294,7 @@ def non_max_suppression_fast(boxes, probs, overlap_thresh=0.9, max_boxes=300):
 
         # delete all indexes from the index list that have
         # 删除当前最大 prob 的 box 和当前最大 prob 的 box 重叠超过阈值的其他 box
+        # 这里因为 overlap 是按照 idxs 获得的, 所以 np.where 其实返回的 idxs 的下标
         idxs = np.delete(idxs, np.concatenate(([last],
                                                np.where(overlap > overlap_thresh)[0])))
 
@@ -287,13 +309,13 @@ def non_max_suppression_fast(boxes, probs, overlap_thresh=0.9, max_boxes=300):
 
 def rpn_to_roi(rpn_class, rpn_regr, C, max_rois=300, overlap_thresh=0.9):
     """
-    rpn 产生的 anchor 进行修正和筛选, 生成 roi
+    对所有的 anchor, 根据 rpn 的分类和回归结果进行筛选和修正, 生成 roi
     :param rpn_class: rpn 分类的结果 (1,m,n,9) m,n 表示 feature map 的高和宽
     :param rpn_regr: rpn 回归的结果 (1,m,n,36)
     :param C: config 对象
     :param max_rois: 最大 roi 个数
     :param overlap_thresh:
-    :return: 返回 roi 在 feature map 上的坐标 (x1,y1,x2,y2)
+    :return: 返回 rois 在 feature map 上的坐标 (x1,y1,x2,y2)
     """
     # 在生成 rpn target 时乘过 C.std_scaling
     rpn_regr = rpn_regr / C.std_scaling
@@ -302,7 +324,7 @@ def rpn_to_roi(rpn_class, rpn_regr, C, max_rois=300, overlap_thresh=0.9):
 
     assert rpn_class.shape[0] == 1
     assert rpn_regr.shape[0] == 1
-    # feature map 的高,宽和深
+    # feature map 的高,宽和深, d=9
     (m, n, d) = rpn_class.shape[1:]
 
     anchor_idx = 0
@@ -323,7 +345,7 @@ def rpn_to_roi(rpn_class, rpn_regr, C, max_rois=300, overlap_thresh=0.9):
             # X 表示的是所有 anchor 的中心点的 x 坐标
             # Y 表示的是所有 anchor 的中心点的 y 坐标
             X, Y = np.meshgrid(np.arange(n), np.arange(m))
-            # A 的最后一维的四个值表示 anchor 的 (x,y,w,h)
+            # A 的最后一维的四个值表示 anchor 的 (x,y,w,h), 其中 x,y 表示左上方点的坐标
             A[:, :, anchor_idx, 0] = X - anchor_width / 2
             A[:, :, anchor_idx, 1] = Y - anchor_height / 2
             A[:, :, anchor_idx, 2] = anchor_width

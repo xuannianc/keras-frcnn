@@ -18,18 +18,27 @@ def union(a, b, area_intersection):
 
 def intersection(a, b):
     # a and b should be (x1,y1,x2,y2)
-    x = max(a[0], b[0])
-    y = max(a[1], b[1])
+    # intersection 的 x1,y1,x2,y2
+    x1 = max(a[0], b[0])
+    y1 = max(a[1], b[1])
+    x2 = min(a[2], b[2])
+    y2 = min(a[3], b[3])
     # width
-    w = min(a[2], b[2]) - x
+    w = x2 - x1
     # height
-    h = min(a[3], b[3]) - y
+    h = y2 - y1
     if w < 0 or h < 0:
         return 0
     return w * h
 
 
 def iou(a, b):
+    """
+    求两个矩形框的 iou
+    :param a:
+    :param b:
+    :return:
+    """
     # a and b should be (x1,y1,x2,y2)
 
     if a[0] >= a[2] or a[1] >= a[3] or b[0] >= b[2] or b[1] >= b[3]:
@@ -62,12 +71,13 @@ def get_new_image_size(width, height, image_min_size=800):
 
 
 class SampleSelector:
-    def __init__(self, class_count):
+    def __init__(self, classes_count):
         # ignore classes that have zero samples
-        self.classes = [class_name for class_name in class_count.keys() if class_count[class_name] > 0]
+        # 'bg' 会被忽略掉
+        self.classes = [class_name for class_name in classes_count.keys() if classes_count[class_name] > 0]
         # 对 iterable 中的元素反复执行循环,返回迭代器
-        self.class_cycle = itertools.cycle(self.classes)
-        self.current_class = next(self.class_cycle)
+        self.classes_cycle = itertools.cycle(self.classes)
+        self.current_class = next(self.classes_cycle)
 
     def skip_sample_to_balance_classes(self, annotation_data):
         """
@@ -82,7 +92,7 @@ class SampleSelector:
             if class_name == self.current_class:
                 # 直到遇到包含当前 class 的图片才不 skip
                 class_in_image = True
-                self.current_class = next(self.class_cycle)
+                self.current_class = next(self.classes_cycle)
                 break
         return not class_in_image
 
@@ -112,6 +122,7 @@ def calc_rpn(C, augmented_annotation, width, height, resized_width, resized_heig
     best_dx_for_bbox = np.zeros((num_gt_bboxes, 4)).astype(np.float32)
 
     # get the GT box coordinates, and resize to account for image resizing
+    # 对 annotations 里面的 boxes 进行 resize, 得到 gt_bboxes
     gt_bboxes = np.zeros((num_gt_bboxes, 4))
     for bbox_idx, bbox in enumerate(augmented_annotation['bboxes']):
         gt_bboxes[bbox_idx, 0] = bbox['x1'] * (resized_width / float(width))
@@ -189,7 +200,7 @@ def calc_rpn(C, augmented_annotation, width, height, resized_width, resized_heig
                             # We set the anchor to positive if the IOU is >0.7.
                             # It does not matter if there was another better box, it just indicates overlap.
                             # 如果一个 anchor 和多个 gt_bbox 的 overlap 都大于 0.7, 记录最大 iou 和 gt_bbox 的个数
-                            if curr_iou > C.rpn_max_overlap:
+                            if curr_iou >= C.rpn_max_overlap:
                                 anchor_type = 'positive'
                                 num_anchors_for_bbox[gt_bbox_idx] += 1
                                 # We update the regression layer target if this IOU is the best for the current anchor
@@ -199,7 +210,7 @@ def calc_rpn(C, augmented_annotation, width, height, resized_width, resized_heig
 
                             # if the IOU is >0.3 and <0.7, it is ambiguous and no included in the objective
                             # 只要 anchor 和某一个 gt_bbox 的 iou 满足此范围, 就认为此 anchor 为 neutral
-                            if C.rpn_min_overlap < curr_iou < C.rpn_max_overlap:
+                            if C.rpn_min_overlap <= curr_iou < C.rpn_max_overlap:
                                 # gray zone between neg and pos
                                 if anchor_type == 'negative':
                                     anchor_type = 'neutral'
@@ -237,13 +248,10 @@ def calc_rpn(C, augmented_annotation, width, height, resized_width, resized_heig
             start = 4 * (best_anchor_ratio_idx + num_anchor_ratios * best_anchor_scale_idx)
             y_rpn_regr[best_anchor_jy, best_anchor_ix, start:start + 4] = best_dx_for_bbox[idx, :]
 
-    # y_rpn_overlap = np.transpose(y_rpn_overlap, (2, 0, 1))
     y_rpn_overlap = np.expand_dims(y_rpn_overlap, axis=0)
 
-    # y_is_box_valid = np.transpose(y_is_box_valid, (2, 0, 1))
     y_is_anchor_valid = np.expand_dims(y_is_anchor_valid, axis=0)
 
-    # y_rpn_regr = np.transpose(y_rpn_regr, (2, 0, 1))
     y_rpn_regr = np.expand_dims(y_rpn_regr, axis=0)
 
     # np.where 返回 3 个数组组成的 tuple, 表示 where 函数里每一个为 True 的条件的三维坐标
@@ -255,18 +263,18 @@ def calc_rpn(C, augmented_annotation, width, height, resized_width, resized_heig
     num_positive_anchors = len(positive_anchors[0])
     num_negative_anchors = len(negative_anchors[0])
 
-    # One issue is that the RPN has many more negative than positive regions, so we turn off some of the negative
-    # regions. We also limit it to 256 regions.
-    num_regions = 256
+    # NOTE: One issue is that the RPN has many more negative than positive anchors, so we turn off some of the negative
+    # anchors. We also limit it to 256 anchors.
+    num_anchors = 256
 
-    if num_positive_anchors > num_regions // 2:
-        # 随机生成 num_positive_anchors - num_regions // 2 个 下标, 忽略这些下标对应的 anchor
-        ignore_positive_anchor_idx = random.sample(range(num_positive_anchors), num_positive_anchors - num_regions // 2)
+    if num_positive_anchors > num_anchors // 2:
+        # 随机生成 num_positive_anchors - num_anchors // 2 个 下标, 忽略这些下标对应的 anchor
+        ignore_positive_anchor_idx = random.sample(range(num_positive_anchors), num_positive_anchors - num_anchors // 2)
         y_is_anchor_valid[
             0, positive_anchors[0][ignore_positive_anchor_idx], positive_anchors[1][ignore_positive_anchor_idx],
             positive_anchors[2][ignore_positive_anchor_idx]] = 0
-        num_positive_anchors = num_regions // 2
-    if num_negative_anchors + num_positive_anchors > num_regions:
+        num_positive_anchors = num_anchors // 2
+    if num_negative_anchors + num_positive_anchors > num_anchors:
         ignore_negative_anchor_idx = random.sample(range(num_negative_anchors),
                                                    num_negative_anchors - num_positive_anchors)
         y_is_anchor_valid[

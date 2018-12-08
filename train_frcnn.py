@@ -31,12 +31,12 @@ parser.add_option("--hf", dest="horizontal_flips", help="Augment with horizontal
 parser.add_option("--vf", dest="vertical_flips", help="Augment with vertical flips in training.",
                   action="store_true", default=False)
 parser.add_option("--rot", "--rotate", dest="rotate",
-                  help="Augment with 90 degree rotations in training.",
+                  help="Augment with 90,180,270 degree rotations in training.",
                   action="store_true", default=False)
 parser.add_option("--image_min_size", type="int", dest="image_min_size", help="Min side of image to resize.",
                   default=800)
 parser.add_option("--num_epochs", type="int", dest="num_epochs", help="Number of epochs.", default=1000)
-parser.add_option("--num_steps", type="int", dest="num_steps", help="Number of steps per epoch.", default=2000)
+parser.add_option("--num_steps", type="int", dest="num_steps", help="Number of steps per epoch.", default=17125)
 parser.add_option("--config_output_path", dest="config_output_path",
                   help="Location to store all the metadata related to the training (to be used when testing).",
                   default="config.pickle")
@@ -78,7 +78,7 @@ else:
 if options.model_weight_path:
     C.model_weight_path = options.model_weight_path
 else:
-    C.model_weight_path = 'faster_rcnn_{}_{{}}_{{}}_{{}}_{{}}_{{}}.hdf5'.format(C.network)
+    C.model_weight_path = 'frcnn_{}_{{}}_{{:.4f}}_{{:.4f}}_{{:.4f}}_{{:.4f}}_{{:.4f}}.hdf5'.format(C.network)
 
 # check if base weight path was passed via command line
 if options.base_net_weight_path:
@@ -248,11 +248,11 @@ for epoch_idx in range(num_epochs):
                 curr_loss = rpn_class_loss + rpn_regr_loss + rcnn_class_loss + rcnn_regr_loss
 
                 if C.verbose:
-                    logger.debug('Mean number of bounding boxes from RPN overlapping ground truth boxes: {}'.format(
+                    logger.debug('Mean number of positive rois: {}'.format(
                         mean_num_pos_rois))
                     if mean_num_pos_rois == 0:
                         logger.warning(
-                            'RPN is not producing bounding boxes that overlap the ground truth boxes. Check RPN settings or keep training.')
+                            'RPN is not producing positive rois. Check settings or keep training.')
                     logger.debug('RPN Classification Loss: {}'.format(rpn_class_loss))
                     logger.debug('RPN Regression Loss : {}'.format(rpn_regr_loss))
                     logger.debug('RCNN Classification Loss: {}'.format(rcnn_class_loss))
@@ -269,7 +269,7 @@ for epoch_idx in range(num_epochs):
                         logger.debug('Total loss decreased from {} to {}, saving weights'.format(best_loss, curr_loss))
                     best_loss = curr_loss
                     model.save_weights(
-                        C.model_weight_path.format(rpn_class_loss, rpn_regr_loss, rcnn_class_loss, rcnn_regr_loss,
+                        C.model_weight_path.format(epoch_idx, rpn_class_loss, rpn_regr_loss, rcnn_class_loss, rcnn_regr_loss,
                                                    rcnn_class_acc))
                 break
 

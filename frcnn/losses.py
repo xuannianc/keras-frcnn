@@ -6,8 +6,8 @@ import tensorflow as tf
 lambda_rpn_regr = 1.0
 lambda_rpn_class = 1.0
 
-lambda_cls_regr = 1.0
-lambda_cls_class = 1.0
+lambda_rcnn_regr = 1.0
+lambda_rcnn_class = 1.0
 
 epsilon = 1e-4
 
@@ -21,6 +21,7 @@ def rpn_regr_loss(num_anchors):
         # less_equal 逐元素比较 a<=b, less 逐元素比较 a<b
         bool_diff = K.cast(K.less_equal(abs_diff, 1.0), tf.float32)
         # smooth_L1_loss = 0.5 * x * x if |x| < 1 else |x| - 0.5
+        # 公式中的 x 代表的是 shape 为 (1, m, n, 4 * num_anchors) 矩阵中的每一个数
         return lambda_rpn_regr * K.sum(
             y_true[:, :, :, :4 * num_anchors] * (
                     bool_diff * (0.5 * diff * diff) + (1 - bool_diff) * (abs_diff - 0.5))) / K.sum(
@@ -31,8 +32,8 @@ def rpn_regr_loss(num_anchors):
 
 def rpn_class_loss(num_anchors):
     def rpn_class_loss_fixed_num(y_true, y_pred):
-        # y_true[:, :, :, :num_anchors] 表示的是 anchor 是否 is valid, 既是否是 neutral
-        # y_true[:, :, :, num_anchors:] 表示的是 anchor 是否 overlap, 既是 positive,还是 negative
+        # y_true[:, :, :, :num_anchors] 表示的是 anchor 是否 is valid, 即是否是 neutral
+        # y_true[:, :, :, num_anchors:] 表示的是 anchor 是否 overlap, 即是 positive,还是 negative
         # y_true[:, :, :, :num_anchors] 作为乘式因子是想要忽略 neutral 这部分的 loss
         return lambda_rpn_class * K.sum(y_true[:, :, :, :num_anchors] * K.binary_crossentropy(y_pred[:, :, :, :],
                                                                                               y_true[:, :, :,
@@ -48,7 +49,7 @@ def rcnn_regr_loss(num_classes):
         diff = y_true[:, :, 4 * num_classes:] - y_pred
         abs_diff = K.abs(diff)
         bool_diff = K.cast(K.less_equal(abs_diff, 1.0), 'float32')
-        return lambda_cls_regr * K.sum(
+        return lambda_rcnn_regr * K.sum(
             y_true[:, :, :4 * num_classes] * (
                     bool_diff * (0.5 * diff * diff) + (1 - bool_diff) * (abs_diff - 0.5))) / K.sum(
             epsilon + y_true[:, :, :4 * num_classes])
@@ -57,4 +58,4 @@ def rcnn_regr_loss(num_classes):
 
 
 def rcnn_class_loss(y_true, y_pred):
-    return lambda_cls_class * K.mean(categorical_crossentropy(y_true[0, :, :], y_pred[0, :, :]))
+    return lambda_rcnn_class * K.mean(categorical_crossentropy(y_true[0, :, :], y_pred[0, :, :]))

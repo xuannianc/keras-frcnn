@@ -25,7 +25,7 @@ class Config:
         # image channel-wise mean to subtract (BGR)
         self.image_channel_mean = [103.939, 116.779, 123.68]
         # ???
-        self.img_scaling_factor = 1.0
+        self.image_scaling_factor = 1.0
 
         # number of ROIs at once
         self.num_rois = 4

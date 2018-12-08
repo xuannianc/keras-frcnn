@@ -11,133 +11,133 @@ from keras import backend as K
 from keras.layers import Input
 from keras.models import Model
 from frcnn import roi_helpers
-
-sys.setrecursionlimit(40000)
+from log import logger
 
 parser = OptionParser()
-
-parser.add_option("-p", "--path", dest="test_path", help="Path to test data.")
+parser.add_option("-p", "--path", dest="test_path", help="Path to test images directory.")
+parser.add_option("-m", "--model_path", dest="model_path", help="Path to frcnn model.")
 parser.add_option("-n", "--num_rois", type="int", dest="num_rois",
-				help="Number of ROIs per iteration. Higher means more memory use.", default=32)
-parser.add_option("--config_filename", dest="config_filename", help=
-				"Location to read the metadata related to the training (generated when training).",
-				default="config.pickle")
-parser.add_option("--network", dest="network", help="Base network to use. Supports vgg or resnet50.", default='resnet50')
+                  help="Number of ROIs per iteration. Higher means more memory use.", default=32)
+parser.add_option("--config_path", dest="config_path", help=
+"Location to read the metadata related to the training (generated when training).",
+                  default="config.pickle")
+parser.add_option("--network", dest="network", help="Base network to use. Supports vgg or resnet50.",
+                  default='resnet50')
 
 (options, args) = parser.parse_args()
 
-if not options.test_path:   # if filename is not given
-	parser.error('Error: path to test data must be specified. Pass --path to command line')
+if not options.test_path:  # if images dir  is not given
+    parser.error('Error: path to test data must be specified. Pass --path to command line')
 
+if not options.model_path:  # if model path is not given
+    parser.error('Error: path to frcnn model must be specified. Pass --path to command line')
 
-config_output_filename = options.config_filename
+config_path = options.config_path
 
-with open(config_output_filename, 'rb') as f_in:
-	C = pickle.load(f_in)
+with open(config_path, 'rb') as f_in:
+    C = pickle.load(f_in)
 
 if C.network == 'resnet50':
-	import frcnn.resnet as nn
+    import frcnn.resnet as nn
 elif C.network == 'vgg':
-	import frcnn.vgg as nn
+    import frcnn.vgg as nn
 
 # turn off any data augmentation at test time
 C.use_horizontal_flips = False
 C.use_vertical_flips = False
 C.rotate = False
 
-img_path = options.test_path
+images_dir = options.test_path
 
-def format_img_size(img, C):
-	""" formats the image size based on config """
-	img_min_side = float(C.im_size)
-	(height,width,_) = img.shape
-		
-	if width <= height:
-		ratio = img_min_side/width
-		new_height = int(ratio * height)
-		new_width = int(img_min_side)
-	else:
-		ratio = img_min_side/height
-		new_width = int(ratio * width)
-		new_height = int(img_min_side)
-	img = cv2.resize(img, (new_width, new_height), interpolation=cv2.INTER_CUBIC)
-	return img, ratio	
 
-def format_img_channels(img, C):
-	""" formats the image channels based on config """
-	img = img[:, :, (2, 1, 0)]
-	img = img.astype(np.float32)
-	img[:, :, 0] -= C.img_channel_mean[0]
-	img[:, :, 1] -= C.img_channel_mean[1]
-	img[:, :, 2] -= C.img_channel_mean[2]
-	img /= C.img_scaling_factor
-	img = np.transpose(img, (2, 0, 1))
-	img = np.expand_dims(img, axis=0)
-	return img
+def format_image_size(image, C):
+    """ formats the image size based on config """
+    image_min_size = float(C.image_min_size)
+    (height, width, _) = image.shape
 
-def format_img(img, C):
-	""" formats an image for model prediction based on config """
-	img, ratio = format_img_size(img, C)
-	img = format_img_channels(img, C)
-	return img, ratio
+    if width <= height:
+        ratio = image_min_size / width
+        new_height = int(ratio * height)
+        new_width = int(image_min_size)
+    else:
+        ratio = image_min_size / height
+        new_width = int(ratio * width)
+        new_height = int(image_min_size)
+    image = cv2.resize(image, (new_width, new_height), interpolation=cv2.INTER_CUBIC)
+    return image, ratio
+
+
+def format_image_channels(image, C):
+    """ formats the image channels based on config """
+    image = image.astype(np.float32)
+    image[:, :, 0] -= C.image_channel_mean[0]
+    image[:, :, 1] -= C.image_channel_mean[1]
+    image[:, :, 2] -= C.image_channel_mean[2]
+    image /= C.image_scaling_factor
+    image_input = np.expand_dims(image, axis=0)
+    return image_input
+
+
+def format_image(image, C):
+    """ formats an image for model prediction based on config """
+    image, ratio = format_image_size(image, C)
+    image_input = format_image_channels(image, C)
+    return image_input, ratio
+
 
 # Method to transform the coordinates of the bounding box to its original size
 def get_real_coordinates(ratio, x1, y1, x2, y2):
+    real_x1 = int(round(x1 * 1.0 / ratio))
+    real_y1 = int(round(y1 * 1.0 / ratio))
+    real_x2 = int(round(x2 * 1.0 / ratio))
+    real_y2 = int(round(y2 * 1.0 / ratio))
 
-	real_x1 = int(round(x1 // ratio))
-	real_y1 = int(round(y1 // ratio))
-	real_x2 = int(round(x2 // ratio))
-	real_y2 = int(round(y2 // ratio))
+    return (real_x1, real_y1, real_x2, real_y2)
 
-	return (real_x1, real_y1, real_x2 ,real_y2)
 
-class_mapping = C.class_mapping
+def show_batch_rois(image, rois, ratio):
+    for roi in rois:
+        roi[2] += roi[0]
+        roi[3] += roi[1]
+        roi = roi * 16
+        x1, y1, x2, y2 = get_real_coordinates(ratio, roi[0], roi[1], roi[2], roi[3])
+        src_image = image.copy()
+        cv2.rectangle(src_image, (x1,y1),(x2,y2), (0,255,0), 2)
+        cv2.imshow('image', src_image)
+        cv2.waitKey(0)
 
-if 'bg' not in class_mapping:
-	class_mapping['bg'] = len(class_mapping)
 
-class_mapping = {v: k for k, v in class_mapping.items()}
-print(class_mapping)
-class_to_color = {class_mapping[v]: np.random.randint(0, 255, 3) for v in class_mapping}
+class_name_idx_mapping = C.class_name_idx_mapping
+
+if 'bg' not in class_name_idx_mapping:
+    class_name_idx_mapping['bg'] = len(class_name_idx_mapping)
+
+class_idx_name_mapping = {v: k for k, v in class_name_idx_mapping.items()}
+logger.debug('class_idx_name_mapping={}'.format(class_idx_name_mapping))
+class_name_color_mapping = {class_idx_name_mapping[idx]: np.random.randint(0, 255, 3) for idx in class_idx_name_mapping}
 C.num_rois = int(options.num_rois)
+C.model_path = options.model_path
 
-if C.network == 'resnet50':
-	num_features = 1024
-elif C.network == 'vgg':
-	num_features = 512
-
-if K.image_dim_ordering() == 'th':
-	input_shape_img = (3, None, None)
-	input_shape_features = (num_features, None, None)
-else:
-	input_shape_img = (None, None, 3)
-	input_shape_features = (None, None, num_features)
-
-
-img_input = Input(shape=input_shape_img)
+image_input_shape = (None, None, 3)
+image_input = Input(shape=image_input_shape)
 roi_input = Input(shape=(C.num_rois, 4))
-feature_map_input = Input(shape=input_shape_features)
 
 # define the base network (resnet here, can be VGG, Inception, etc)
-shared_layers = nn.nn_base(img_input, trainable=True)
+base_net_output = nn.base_net(image_input)
 
 # define the RPN, built on the base layers
-num_anchors = len(C.anchor_box_scales) * len(C.anchor_box_ratios)
-rpn_layers = nn.rpn(shared_layers, num_anchors)
+num_anchors = len(C.anchor_scales) * len(C.anchor_ratios)
+rpn_output = nn.rpn(base_net_output, num_anchors)
+rcnn_output = nn.rcnn(base_net_output, roi_input, C.num_rois, num_classes=len(class_name_idx_mapping))
+model_rpn = Model(image_input, rpn_output)
+model_rcnn = Model([image_input, roi_input], rcnn_output)
+model_rcnn.summary()
 
-classifier = nn.classifier(feature_map_input, roi_input, C.num_rois, nb_classes=len(class_mapping), trainable=True)
-
-model_rpn = Model(img_input, rpn_layers)
-model_classifier_only = Model([feature_map_input, roi_input], classifier)
-
-model_classifier = Model([feature_map_input, roi_input], classifier)
-
-print('Loading weights from {}'.format(C.model_path))
+logger.info('Loading weights from {}'.format(C.model_path))
 model_rpn.load_weights(C.model_path, by_name=True)
-model_classifier.load_weights(C.model_path, by_name=True)
-
+model_rcnn.load_weights(C.model_path, by_name=True)
 model_rpn.compile(optimizer='sgd', loss='mse')
-model_classifier.compile(optimizer='sgd', loss='mse')
+model_rcnn.compile(optimizer='sgd', loss='mse')
 
 all_imgs = []
 
@@ -147,101 +147,107 @@ bbox_threshold = 0.8
 
 visualise = True
 
-for idx, img_name in enumerate(sorted(os.listdir(img_path))):
-	if not img_name.lower().endswith(('.bmp', '.jpeg', '.jpg', '.png', '.tif', '.tiff')):
-		continue
-	print(img_name)
-	st = time.time()
-	filepath = os.path.join(img_path,img_name)
+for idx, image_file in enumerate(sorted(os.listdir(images_dir))):
+    if not image_file.lower().endswith(('.bmp', '.jpeg', '.jpg', '.png', '.tif', '.tiff')):
+        continue
+    logger.debug('image_file={}'.format(image_file))
+    start = time.time()
+    image_path = os.path.join(images_dir, image_file)
+    image = cv2.imread(image_path)
+    image_input, ratio = format_image(image, C)
 
-	img = cv2.imread(filepath)
+    # get the feature maps and output from the RPN
+    # Y11: rpn_class Y12: rpn_regr
+    rpn_class, rpn_regr = model_rpn.predict(image_input)
 
-	X, ratio = format_img(img, C)
+    rois = roi_helpers.rpn_to_roi(rpn_class, rpn_regr, C, overlap_thresh=0.7)
 
-	if K.image_dim_ordering() == 'tf':
-		X = np.transpose(X, (0, 2, 3, 1))
+    # convert from (x1,y1,x2,y2) to (x,y,w,h)
+    rois[:, 2] -= rois[:, 0]
+    rois[:, 3] -= rois[:, 1]
 
-	# get the feature maps and output from the RPN
-	[Y1, Y2, F] = model_rpn.predict(X)
-	
+    # apply the spatial pyramid pooling to the proposed regions
+    bboxes = {}
+    probs = {}
 
-	R = roi_helpers.rpn_to_roi(Y1, Y2, C, K.image_dim_ordering(), overlap_thresh=0.7)
+    # 把所有的 num_rois 分成 n 份, 每份 C.num_rois 个
+    for batch_idx in range(rois.shape[0] // C.num_rois + 1):
+        # show_batch_rois(image, rois[C.num_rois * batch_idx:C.num_rois * (batch_idx + 1), :], ratio)
+        batch_rois = np.expand_dims(rois[C.num_rois * batch_idx:C.num_rois * (batch_idx + 1), :], axis=0)
+        # 正好整除
+        if batch_rois.shape[1] == 0:
+            break
+        # 不整除, 最后一个 batch 的 roi 数量不足 num_rois, 需要补充一些
+        if batch_idx == rois.shape[0] // C.num_rois:
+            # pad batch_rois
+            curr_shape = batch_rois.shape
+            target_shape = (curr_shape[0], C.num_rois, curr_shape[2])
+            padded_batch_rois = np.zeros(target_shape).astype(batch_rois.dtype)
+            padded_batch_rois[:, :curr_shape[1], :] = batch_rois
+            # UNCLEAR: 为什么用第一个 roi 来进行填充
+            padded_batch_rois[0, curr_shape[1]:, :] = batch_rois[0, 0, :]
+            batch_rois = padded_batch_rois
 
-	# convert from (x1,y1,x2,y2) to (x,y,w,h)
-	R[:, 2] -= R[:, 0]
-	R[:, 3] -= R[:, 1]
+        # shape: (1,C.num_rois,num_classes) (1,C.num_rois,(num_classes-1) * 4)
+        rcnn_class, rcnn_regr = model_rcnn.predict([image_input, batch_rois])
+        logger.debug('max={}'.format(np.max(np.argmax(rcnn_class[0, :, :], axis=-1) != 20)))
+        logger.debug('nothing')
+        for roi_idx in range(rcnn_class.shape[1]):
+            # roi 分类的最大 prob < bbox_threshold 或者 roi 分类的最大 prob 是 'bg'
+            if np.max(rcnn_class[0, roi_idx, :]) < bbox_threshold or np.argmax(rcnn_class[0, roi_idx, :]) == (
+                    rcnn_class.shape[2] - 1):
+                continue
 
-	# apply the spatial pyramid pooling to the proposed regions
-	bboxes = {}
-	probs = {}
+            class_name = class_name_idx_mapping[np.argmax(rcnn_class[0, roi_idx, :])]
 
-	for jk in range(R.shape[0]//C.num_rois + 1):
-		ROIs = np.expand_dims(R[C.num_rois*jk:C.num_rois*(jk+1), :], axis=0)
-		if ROIs.shape[1] == 0:
-			break
+            if class_name not in bboxes:
+                bboxes[class_name] = []
+                probs[class_name] = []
 
-		if jk == R.shape[0]//C.num_rois:
-			#pad R
-			curr_shape = ROIs.shape
-			target_shape = (curr_shape[0],C.num_rois,curr_shape[2])
-			ROIs_padded = np.zeros(target_shape).astype(ROIs.dtype)
-			ROIs_padded[:, :curr_shape[1], :] = ROIs
-			ROIs_padded[0, curr_shape[1]:, :] = ROIs[0, 0, :]
-			ROIs = ROIs_padded
+            (x, y, w, h) = batch_rois[0, roi_idx, :]
 
-		[P_cls, P_regr] = model_classifier_only.predict([F, ROIs])
+            class_id = np.argmax(rcnn_class[0, roi_idx, :])
+            try:
+                (tx, ty, tw, th) = rcnn_regr[0, roi_idx, 4 * class_id:4 * (class_id + 1)]
+                tx /= C.classifier_regr_std[0]
+                ty /= C.classifier_regr_std[1]
+                tw /= C.classifier_regr_std[2]
+                th /= C.classifier_regr_std[3]
+                x, y, w, h = roi_helpers.apply_regr(x, y, w, h, tx, ty, tw, th)
+            except:
+                pass
+            bboxes[class_name].append(
+                [C.rpn_stride * x, C.rpn_stride * y, C.rpn_stride * (x + w), C.rpn_stride * (y + h)])
+            probs[class_name].append(np.max(rcnn_class[0, roi_idx, :]))
 
-		for ii in range(P_cls.shape[1]):
+    all_detections = []
 
-			if np.max(P_cls[0, ii, :]) < bbox_threshold or np.argmax(P_cls[0, ii, :]) == (P_cls.shape[2] - 1):
-				continue
+    for class_name in bboxes:
+        class_bboxes = np.array(bboxes[class_name])
+        filtered_class_boxes, filtered_class_probs = roi_helpers.non_max_suppression_fast(class_bboxes,
+                                                                                          np.array(probs[class_name]),
+                                                                                          overlap_thresh=0.5)
+        for idx in range(filtered_class_boxes.shape[0]):
+            (x1, y1, x2, y2) = filtered_class_boxes[idx, :]
+            (real_x1, real_y1, real_x2, real_y2) = get_real_coordinates(ratio, x1, y1, x2, y2)
 
-			cls_name = class_mapping[np.argmax(P_cls[0, ii, :])]
+            cv2.rectangle(image, (real_x1, real_y1), (real_x2, real_y2),
+                          (int(class_name_color_mapping[class_name][0]), int(class_name_color_mapping[class_name][1]),
+                           int(class_name_color_mapping[class_name][2])), 2)
 
-			if cls_name not in bboxes:
-				bboxes[cls_name] = []
-				probs[cls_name] = []
+            text = '{}: {}'.format(class_name, int(100 * filtered_class_probs[idx]))
+            all_detections.append((class_name, 100 * filtered_class_probs[idx]))
+            # size[0][0] 表示 width, size[0][1] 表示 height, size[1] 表示 baseline
+            size = cv2.getTextSize(text, cv2.FONT_HERSHEY_COMPLEX, 1, 1)
+            text_origin = (real_x1, real_y1)
 
-			(x, y, w, h) = ROIs[0, ii, :]
+            cv2.rectangle(image, (text_origin[0] - 5, text_origin[1] - size[0][1] - 5),
+                          (text_origin[0] + size[0][0] + 5, text_origin[1] + 5), (0, 0, 0), 2)
+            cv2.rectangle(image, (text_origin[0] - 5, text_origin[1] - size[0][1] - 5),
+                          (text_origin[0] + size[0][0] + 5, text_origin[1] + 5), (255, 255, 255), -1)
+            cv2.putText(image, text, text_origin, cv2.FONT_HERSHEY_COMPLEX, 1, (0, 0, 0), 1)
 
-			cls_num = np.argmax(P_cls[0, ii, :])
-			try:
-				(tx, ty, tw, th) = P_regr[0, ii, 4*cls_num:4*(cls_num+1)]
-				tx /= C.classifier_regr_std[0]
-				ty /= C.classifier_regr_std[1]
-				tw /= C.classifier_regr_std[2]
-				th /= C.classifier_regr_std[3]
-				x, y, w, h = roi_helpers.apply_regr(x, y, w, h, tx, ty, tw, th)
-			except:
-				pass
-			bboxes[cls_name].append([C.rpn_stride*x, C.rpn_stride*y, C.rpn_stride*(x+w), C.rpn_stride*(y+h)])
-			probs[cls_name].append(np.max(P_cls[0, ii, :]))
-
-	all_dets = []
-
-	for key in bboxes:
-		bbox = np.array(bboxes[key])
-
-		new_boxes, new_probs = roi_helpers.non_max_suppression_fast(bbox, np.array(probs[key]), overlap_thresh=0.5)
-		for jk in range(new_boxes.shape[0]):
-			(x1, y1, x2, y2) = new_boxes[jk,:]
-
-			(real_x1, real_y1, real_x2, real_y2) = get_real_coordinates(ratio, x1, y1, x2, y2)
-
-			cv2.rectangle(img,(real_x1, real_y1), (real_x2, real_y2), (int(class_to_color[key][0]), int(class_to_color[key][1]), int(class_to_color[key][2])),2)
-
-			textLabel = '{}: {}'.format(key,int(100*new_probs[jk]))
-			all_dets.append((key,100*new_probs[jk]))
-
-			(retval,baseLine) = cv2.getTextSize(textLabel,cv2.FONT_HERSHEY_COMPLEX,1,1)
-			textOrg = (real_x1, real_y1-0)
-
-			cv2.rectangle(img, (textOrg[0] - 5, textOrg[1]+baseLine - 5), (textOrg[0]+retval[0] + 5, textOrg[1]-retval[1] - 5), (0, 0, 0), 2)
-			cv2.rectangle(img, (textOrg[0] - 5,textOrg[1]+baseLine - 5), (textOrg[0]+retval[0] + 5, textOrg[1]-retval[1] - 5), (255, 255, 255), -1)
-			cv2.putText(img, textLabel, textOrg, cv2.FONT_HERSHEY_DUPLEX, 1, (0, 0, 0), 1)
-
-	print('Elapsed time = {}'.format(time.time() - st))
-	print(all_dets)
-	cv2.imshow('img', img)
-	cv2.waitKey(0)
-	# cv2.imwrite('./results_imgs/{}.png'.format(idx),img)
+    logger.debug('Elapsed time = {}'.format(time.time() - start))
+    logger.debug('all_detections={}'.format(all_detections))
+    cv2.imshow('image', image)
+    cv2.waitKey(0)
