@@ -369,7 +369,7 @@ def get_anchor_gt(annotations, classes_count, C, get_feature_map_size, mode='tra
                 image[:, :, 2] -= C.image_channel_mean[2]
                 image = np.expand_dims(image, axis=0)
                 # std_scaling 规整因子,什么意思?
-                y_rpn_regr[:, :, :, y_rpn_regr.shape[1] // 2:] *= C.std_scaling
+                y_rpn_regr[:, :, :, y_rpn_regr.shape[-1] // 2:] *= C.std_scaling
                 # y_rpn_cls 的 shape 为 (1,m,n,18)
                 # y_rpn_regr 的 shape 为 (1,m,n,72)
                 yield np.copy(image), [np.copy(y_rpn_cls), np.copy(y_rpn_regr)], augmented_annotation
