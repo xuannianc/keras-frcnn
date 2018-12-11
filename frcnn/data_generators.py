@@ -50,7 +50,7 @@ def iou(a, b):
     return float(area_i) / float(area_u + 1e-6)
 
 
-def get_new_image_size(width, height, image_min_size=800):
+def get_new_image_size(width, height, image_min_size=600):
     """
     按照 image_min_size 的标准来计算 resized 后的 image size
     :param width:
@@ -139,8 +139,8 @@ def calc_rpn(C, augmented_annotation, width, height, resized_width, resized_heig
             # 遍历 feature map 的所有点,分别映射到输入图像的对应 16 * 16 的矩形的中心点
             for ix in range(output_width):
                 # x-coordinates of the current anchor box
-                anchor_x1 = downscale * (ix + 0.5) - anchor_width // 2
-                anchor_x2 = downscale * (ix + 0.5) + anchor_width // 2
+                anchor_x1 = downscale * (ix + 0.5) - anchor_width / 2
+                anchor_x2 = downscale * (ix + 0.5) + anchor_width / 2
 
                 # ignore boxes that go across image boundaries
                 if anchor_x1 < 0 or anchor_x2 > resized_width:
@@ -149,8 +149,8 @@ def calc_rpn(C, augmented_annotation, width, height, resized_width, resized_heig
                 for jy in range(output_height):
 
                     # y-coordinates of the current anchor box
-                    anchor_y1 = downscale * (jy + 0.5) - anchor_height // 2
-                    anchor_y2 = downscale * (jy + 0.5) + anchor_height // 2
+                    anchor_y1 = downscale * (jy + 0.5) - anchor_height / 2
+                    anchor_y2 = downscale * (jy + 0.5) + anchor_height / 2
 
                     # ignore boxes that go across image boundaries
                     if anchor_y1 < 0 or anchor_y2 > resized_height:
@@ -346,10 +346,10 @@ def get_anchor_gt(annotations, classes_count, C, get_feature_map_size, mode='tra
                 height, width = image.shape[:2]
 
                 # get image dimensions for resizing
-                # 按照最小的边为 800 进行 resize
+                # 按照最小的边为 600 进行 resize
                 (resized_width, resized_height) = get_new_image_size(width, height, C.image_min_size)
 
-                # resize the image so that smallest side is 800px
+                # resize the image so that smallest side is 600px
                 image = cv2.resize(image, (resized_width, resized_height), interpolation=cv2.INTER_CUBIC)
 
                 try:

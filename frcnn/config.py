@@ -20,7 +20,7 @@ class Config:
                                   [2. / math.sqrt(2), 1. / math.sqrt(2)]]
 
         # size to resize the smallest side of the image
-        self.image_min_size = 800
+        self.image_min_size = 600
 
         # image channel-wise mean to subtract (BGR)
         self.image_channel_mean = [103.939, 116.779, 123.68]

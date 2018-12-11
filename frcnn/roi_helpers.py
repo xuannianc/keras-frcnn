@@ -118,7 +118,7 @@ def calc_iou(rois, augmented_annotation, C, class_name_idx_mapping):
 
     X = np.array(x_roi)
     Y_class = np.array(y_class)
-    Y_regr = np.concatenate([np.array(y_regr_valid), np.array(y_regr)], axis=1)
+    Y_regr = np.concatenate([np.array(y_regr_valid), np.array(y_regr)], axis=-1)
     # expand_dims 是为了 batch 那一维度
     return np.expand_dims(X, axis=0), np.expand_dims(Y_class, axis=0), np.expand_dims(Y_regr, axis=0), IoUs
 

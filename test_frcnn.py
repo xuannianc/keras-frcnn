@@ -37,6 +37,8 @@ config_path = options.config_path
 with open(config_path, 'rb') as f_in:
     C = pickle.load(f_in)
 
+
+C.network = options.network
 if C.network == 'resnet50':
     import frcnn.resnet as nn
 elif C.network == 'vgg':
@@ -130,6 +132,7 @@ num_anchors = len(C.anchor_scales) * len(C.anchor_ratios)
 rpn_output = nn.rpn(base_net_output, num_anchors)
 rcnn_output = nn.rcnn(base_net_output, rois_input, C.num_rois, num_classes=len(class_name_idx_mapping))
 model_rpn = Model(image_input, rpn_output)
+model_rpn.summary()
 model_rcnn = Model([image_input, rois_input], rcnn_output)
 model_rcnn.summary()
 
@@ -172,7 +175,7 @@ for idx, image_file in enumerate(sorted(os.listdir(images_dir))):
 
     # 把所有的 num_rois 分成 n 份, 每份 C.num_rois 个
     for batch_idx in range(rois.shape[0] // C.num_rois + 1):
-        # show_batch_rois(image, rois[C.num_rois * batch_idx:C.num_rois * (batch_idx + 1), :], ratio)
+        show_batch_rois(image, rois[C.num_rois * batch_idx:C.num_rois * (batch_idx + 1), :], ratio)
         batch_rois = np.expand_dims(rois[C.num_rois * batch_idx:C.num_rois * (batch_idx + 1), :], axis=0)
         # 正好整除
         if batch_rois.shape[1] == 0:
