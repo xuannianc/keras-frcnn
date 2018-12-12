@@ -16,6 +16,8 @@ import frcnn.roi_helpers as roi_helpers
 from log import logger
 from keras.utils import generic_utils
 import json
+from keras.utils import plot_model
+import os.path as osp
 
 parser = OptionParser()
 # DATASET_DIR = '/home/adam/.keras/datasets/VOCdevkit'
@@ -34,9 +36,9 @@ parser.add_option("--rot", "--rotate", dest="rotate",
                   help="Augment with 90,180,270 degree rotations in training.",
                   action="store_true", default=False)
 parser.add_option("--image_min_size", type="int", dest="image_min_size", help="Min side of image to resize.",
-                  default=800)
+                  default=600)
 parser.add_option("--num_epochs", type="int", dest="num_epochs", help="Number of epochs.", default=1000)
-parser.add_option("--num_steps", type="int", dest="num_steps", help="Number of steps per epoch.", default=17125)
+parser.add_option("--num_steps", type="int", dest="num_steps", help="Number of steps per epoch.", default=11540)
 parser.add_option("--config_output_path", dest="config_output_path",
                   help="Location to store all the metadata related to the training (to be used when testing).",
                   default="config.pickle")
@@ -134,12 +136,11 @@ rpn_output = nn.rpn(base_net_output, num_anchors)
 # 第二个元素是 regr 返回的值, 其中不包括 'bg'
 rcnn_output = nn.rcnn(base_net_output, rois_input, C.num_rois, num_classes=len(classes_count))
 model_rpn = Model(image_input, rpn_output)
-model_rpn.summary()
 model_rcnn = Model([image_input, rois_input], rcnn_output)
-model_rcnn.summary()
 # this is a model that holds both the RPN and the RCNN, used to load/save weights for the models
 model = Model([image_input, rois_input], rpn_output + rcnn_output)
-
+if not osp.exists('model.jpg'):
+    plot_model(model, to_file='model.jpg')
 try:
     logger.info('loading weights from {}'.format(C.base_net_weights_path))
     model_rpn.load_weights(C.base_net_weights_path, by_name=True)
