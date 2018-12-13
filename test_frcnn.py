@@ -1,5 +1,6 @@
 from __future__ import division
 import os
+os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 import cv2
 import numpy as np
 import sys
@@ -12,6 +13,7 @@ from keras.layers import Input
 from keras.models import Model
 from frcnn import roi_helpers
 from log import logger
+import json
 
 parser = OptionParser()
 parser.add_option("-p", "--path", dest="test_path", help="Path to test images directory.")
@@ -36,7 +38,6 @@ config_path = options.config_path
 
 with open(config_path, 'rb') as f_in:
     C = pickle.load(f_in)
-
 
 C.network = options.network
 if C.network == 'resnet50':
@@ -104,7 +105,28 @@ def show_batch_rois(image, rois, ratio):
         roi = roi * 16
         x1, y1, x2, y2 = get_real_coordinates(ratio, roi[0], roi[1], roi[2], roi[3])
         src_image = image.copy()
-        cv2.rectangle(src_image, (x1,y1),(x2,y2), (0,255,0), 2)
+        cv2.rectangle(src_image, (x1, y1), (x2, y2), (0, 255, 0), 2)
+        cv2.imshow('image', src_image)
+        cv2.waitKey(0)
+
+
+def show_not_bg_rois(image, not_bg_class_names, not_bg_class_prob, not_bg_rois, ratio):
+    for roi, class_name, class_prob in zip(not_bg_rois, not_bg_class_names, not_bg_class_probs):
+        roi[2] += roi[0]
+        roi[3] += roi[1]
+        roi = roi * 16
+        x1, y1, x2, y2 = get_real_coordinates(ratio, roi[0], roi[1], roi[2], roi[3])
+        src_image = image.copy()
+        cv2.rectangle(src_image, (x1, y1), (x2, y2), (0, 255, 0), 2)
+        text = '{}: {}'.format(class_name, int(100 * class_prob))
+        # size[0][0] 表示 width, size[0][1] 表示 height, size[1] 表示 baseline
+        size = cv2.getTextSize(text, cv2.FONT_HERSHEY_COMPLEX, 1, 1)
+        text_origin = (x1, y1 + size[0][1])
+        cv2.rectangle(src_image, (text_origin[0] - 5, y1 - 5),
+                      (text_origin[0] + size[0][0] + 5, text_origin[1] + 5), (0, 0, 0), 2)
+        cv2.rectangle(src_image, (text_origin[0] - 5, y1 - 5),
+                      (text_origin[0] + size[0][0] + 5, text_origin[1] + 5), (255, 255, 255), -1)
+        cv2.putText(src_image, text, text_origin, cv2.FONT_HERSHEY_COMPLEX, 1, (0, 0, 0), 1)
         cv2.imshow('image', src_image)
         cv2.waitKey(0)
 
@@ -146,16 +168,21 @@ all_imgs = []
 
 classes = {}
 
-bbox_threshold = 0.8
+bbox_threshold = 0.7
 
 visualise = True
 
-for idx, image_file in enumerate(sorted(os.listdir(images_dir))):
-    if not image_file.lower().endswith(('.bmp', '.jpeg', '.jpg', '.png', '.tif', '.tiff')):
-        continue
-    logger.debug('image_file={}'.format(image_file))
+# for test
+annotations = json.load(open('annotation_data.json'))
+image_paths = [annotation['filepath'] for annotation in annotations if annotation['imageset'] == 'train']
+for idx, image_path in enumerate(image_paths):
+    # for idx, image_file in enumerate(sorted(os.listdir(images_dir))):
+    #     if not image_file.lower().endswith(('.bmp', '.jpeg', '.jpg', '.png', '.tif', '.tiff')):
+    #         continue
+    #     logger.debug('image_file={}'.format(image_file))
+    logger.debug('image_path={}'.format(image_path))
     start = time.time()
-    image_path = os.path.join(images_dir, image_file)
+    # image_path = os.path.join(images_dir, image_file)
     image = cv2.imread(image_path)
     image_input, ratio = format_image(image, C)
 
@@ -175,7 +202,7 @@ for idx, image_file in enumerate(sorted(os.listdir(images_dir))):
 
     # 把所有的 num_rois 分成 n 份, 每份 C.num_rois 个
     for batch_idx in range(rois.shape[0] // C.num_rois + 1):
-        show_batch_rois(image, rois[C.num_rois * batch_idx:C.num_rois * (batch_idx + 1), :], ratio)
+        # show_batch_rois(image, rois[C.num_rois * batch_idx:C.num_rois * (batch_idx + 1), :], ratio)
         batch_rois = np.expand_dims(rois[C.num_rois * batch_idx:C.num_rois * (batch_idx + 1), :], axis=0)
         # 正好整除
         if batch_rois.shape[1] == 0:
@@ -193,15 +220,20 @@ for idx, image_file in enumerate(sorted(os.listdir(images_dir))):
 
         # shape: (1,C.num_rois,num_classes) (1,C.num_rois,(num_classes-1) * 4)
         rcnn_class, rcnn_regr = model_rcnn.predict([image_input, batch_rois])
-        logger.debug('max={}'.format(np.max(np.argmax(rcnn_class[0, :, :], axis=-1) != 20)))
-        logger.debug('nothing')
+        not_bg_ids = np.where(np.argmax(rcnn_class[0, :, :], axis=-1) != 20)[0]
+        not_bg_class_ids = np.argmax(rcnn_class[0, :, :], axis=-1)[not_bg_ids]
+        not_bg_class_names = [class_idx_name_mapping[id] for id in not_bg_class_ids]
+        not_bg_class_probs = [class_probs[class_id] for class_probs,class_id in zip(rcnn_class[0][not_bg_ids], not_bg_class_ids)]
+        not_bg_rois = rois[C.num_rois * batch_idx:C.num_rois * (batch_idx + 1), :][not_bg_ids]
+        logger.debug('not_bg_ids={}'.format(not_bg_ids))
+        # show_not_bg_rois(image, not_bg_class_names, not_bg_class_probs, not_bg_rois, ratio)
         for roi_idx in range(rcnn_class.shape[1]):
             # roi 分类的最大 prob < bbox_threshold 或者 roi 分类的最大 prob 是 'bg'
             if np.max(rcnn_class[0, roi_idx, :]) < bbox_threshold or np.argmax(rcnn_class[0, roi_idx, :]) == (
                     rcnn_class.shape[2] - 1):
                 continue
 
-            class_name = class_name_idx_mapping[np.argmax(rcnn_class[0, roi_idx, :])]
+            class_name = class_idx_name_mapping[np.argmax(rcnn_class[0, roi_idx, :])]
 
             if class_name not in bboxes:
                 bboxes[class_name] = []
@@ -241,14 +273,14 @@ for idx, image_file in enumerate(sorted(os.listdir(images_dir))):
             text = '{}: {}'.format(class_name, int(100 * filtered_class_probs[idx]))
             all_detections.append((class_name, 100 * filtered_class_probs[idx]))
             # size[0][0] 表示 width, size[0][1] 表示 height, size[1] 表示 baseline
-            size = cv2.getTextSize(text, cv2.FONT_HERSHEY_COMPLEX, 1, 1)
-            text_origin = (real_x1, real_y1)
+            size = cv2.getTextSize(text, cv2.FONT_HERSHEY_COMPLEX, 0.5, 1)
+            text_origin = (real_x1, real_y1 + size[0][1])
 
             cv2.rectangle(image, (text_origin[0] - 5, text_origin[1] - size[0][1] - 5),
                           (text_origin[0] + size[0][0] + 5, text_origin[1] + 5), (0, 0, 0), 2)
             cv2.rectangle(image, (text_origin[0] - 5, text_origin[1] - size[0][1] - 5),
                           (text_origin[0] + size[0][0] + 5, text_origin[1] + 5), (255, 255, 255), -1)
-            cv2.putText(image, text, text_origin, cv2.FONT_HERSHEY_COMPLEX, 1, (0, 0, 0), 1)
+            cv2.putText(image, text, text_origin, cv2.FONT_HERSHEY_COMPLEX, 0.5, (0, 0, 0), 1)
 
     logger.debug('Elapsed time = {}'.format(time.time() - start))
     logger.debug('all_detections={}'.format(all_detections))
