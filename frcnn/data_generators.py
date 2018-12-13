@@ -56,7 +56,7 @@ def get_new_image_size(width, height, image_min_size=600):
     :param width:
     :param height:
     :param image_min_size:
-    :return:
+    :return: resized_width, resized_height
     """
     if width <= height:
         ratio = float(image_min_size) / width
@@ -263,8 +263,8 @@ def calc_rpn(C, augmented_annotation, width, height, resized_width, resized_heig
     num_positive_anchors = len(positive_anchors[0])
     num_negative_anchors = len(negative_anchors[0])
 
-    # NOTE: One issue is that the RPN has many more negative than positive anchors, so we turn off some of the negative
-    # anchors. We also limit it to 256 anchors.
+    # NOTE: One issue is that the RPN has many more negative than positive anchors,
+    #  so we turn off some of the negative anchors. We also limit it to 256 anchors.
     num_anchors = 256
 
     if num_positive_anchors > num_anchors // 2:
@@ -274,7 +274,8 @@ def calc_rpn(C, augmented_annotation, width, height, resized_width, resized_heig
             0, positive_anchors[0][ignore_positive_anchor_idx], positive_anchors[1][ignore_positive_anchor_idx],
             positive_anchors[2][ignore_positive_anchor_idx]] = 0
         num_positive_anchors = num_anchors // 2
-    if num_negative_anchors + num_positive_anchors > num_anchors:
+    if num_negative_anchors > num_positive_anchors:
+        # 使正负样本的数量相等
         ignore_negative_anchor_idx = random.sample(range(num_negative_anchors),
                                                    num_negative_anchors - num_positive_anchors)
         y_is_anchor_valid[

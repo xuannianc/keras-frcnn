@@ -29,7 +29,7 @@ def calc_iou(rois, augmented_annotation, C, class_name_idx_mapping):
     (resized_width, resized_height) = data_generators.get_new_image_size(width, height, C.image_min_size)
     # ground truth bbox 在 feature map 上的坐标
     gt_bboxes = np.zeros((len(bboxes), 4))
-    width_ratio = resized_height / float(width)
+    width_ratio = resized_width / float(width)
     height_ratio = resized_height / float(height)
     for bbox_idx, bbox in enumerate(bboxes):
         # get the GT box coordinates, and resize to account for image resizing
