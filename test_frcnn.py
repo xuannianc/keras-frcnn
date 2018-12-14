@@ -29,10 +29,10 @@ parser.add_option("--network", dest="network", help="Base network to use. Suppor
 (options, args) = parser.parse_args()
 
 if not options.test_path:  # if images dir  is not given
-    parser.error('Error: path to test data must be specified. Pass --path to command line')
+    parser.error('Error: path to test data must be specified. Pass -p or --path to command line')
 
 if not options.model_path:  # if model path is not given
-    parser.error('Error: path to frcnn model must be specified. Pass --path to command line')
+    parser.error('Error: path to frcnn model must be specified. Pass -m or --model_path to command line')
 
 config_path = options.config_path
 
@@ -168,13 +168,13 @@ all_imgs = []
 
 classes = {}
 
-bbox_threshold = 0.7
+bbox_threshold = 0.8
 
 visualise = True
 
 # for test
 annotations = json.load(open('annotation_data.json'))
-image_paths = [annotation['filepath'] for annotation in annotations if annotation['imageset'] == 'train']
+image_paths = [annotation['filepath'] for annotation in annotations if annotation['imageset'] == 'val']
 for idx, image_path in enumerate(image_paths):
     # for idx, image_file in enumerate(sorted(os.listdir(images_dir))):
     #     if not image_file.lower().endswith(('.bmp', '.jpeg', '.jpg', '.png', '.tif', '.tiff')):
@@ -217,6 +217,11 @@ for idx, image_path in enumerate(image_paths):
             # UNCLEAR: 为什么用第一个 roi 来进行填充
             padded_batch_rois[0, curr_shape[1]:, :] = batch_rois[0, 0, :]
             batch_rois = padded_batch_rois
+            # padding size
+            padding_size = C.num_rois - curr_shape[1]
+            padding_rois = [batch_rois[0, 0, :]] * padding_size
+            padding_rois = np.stack(padding_rois)
+            rois = np.concatenate((rois, padding_rois), axis=0)
 
         # shape: (1,C.num_rois,num_classes) (1,C.num_rois,(num_classes-1) * 4)
         rcnn_class, rcnn_regr = model_rcnn.predict([image_input, batch_rois])
