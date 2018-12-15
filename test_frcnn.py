@@ -1,5 +1,6 @@
 from __future__ import division
 import os
+
 os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 import cv2
 import numpy as np
@@ -225,12 +226,13 @@ for idx, image_path in enumerate(image_paths):
 
         # shape: (1,C.num_rois,num_classes) (1,C.num_rois,(num_classes-1) * 4)
         rcnn_class, rcnn_regr = model_rcnn.predict([image_input, batch_rois])
-        not_bg_ids = np.where(np.argmax(rcnn_class[0, :, :], axis=-1) != 20)[0]
-        not_bg_class_ids = np.argmax(rcnn_class[0, :, :], axis=-1)[not_bg_ids]
-        not_bg_class_names = [class_idx_name_mapping[id] for id in not_bg_class_ids]
-        not_bg_class_probs = [class_probs[class_id] for class_probs,class_id in zip(rcnn_class[0][not_bg_ids], not_bg_class_ids)]
-        not_bg_rois = rois[C.num_rois * batch_idx:C.num_rois * (batch_idx + 1), :][not_bg_ids]
-        logger.debug('not_bg_ids={}'.format(not_bg_ids))
+        # not_bg_ids = np.where(np.argmax(rcnn_class[0, :, :], axis=-1) != 20)[0]
+        # not_bg_class_ids = np.argmax(rcnn_class[0, :, :], axis=-1)[not_bg_ids]
+        # not_bg_class_names = [class_idx_name_mapping[id] for id in not_bg_class_ids]
+        # not_bg_class_probs = [class_probs[class_id] for class_probs, class_id in
+        #                       zip(rcnn_class[0][not_bg_ids], not_bg_class_ids)]
+        # not_bg_rois = rois[C.num_rois * batch_idx:C.num_rois * (batch_idx + 1), :][not_bg_ids]
+        # logger.debug('not_bg_ids={}'.format(not_bg_ids))
         # show_not_bg_rois(image, not_bg_class_names, not_bg_class_probs, not_bg_rois, ratio)
         for roi_idx in range(rcnn_class.shape[1]):
             # roi 分类的最大 prob < bbox_threshold 或者 roi 分类的最大 prob 是 'bg'
@@ -254,6 +256,11 @@ for idx, image_path in enumerate(image_paths):
                 tw /= C.classifier_regr_std[2]
                 th /= C.classifier_regr_std[3]
                 x, y, w, h = roi_helpers.apply_regr(x, y, w, h, tx, ty, tw, th)
+                # 过滤掉不合理的 bbox
+                if w <= 0 or h <= 0:
+                    continue
+                x = max(0, x)
+                y = max(0, y)
             except:
                 pass
             bboxes[class_name].append(
@@ -269,17 +276,19 @@ for idx, image_path in enumerate(image_paths):
                                                                                           overlap_thresh=0.5)
         for idx in range(filtered_class_boxes.shape[0]):
             (x1, y1, x2, y2) = filtered_class_boxes[idx, :]
-            (real_x1, real_y1, real_x2, real_y2) = get_real_coordinates(ratio, x1, y1, x2, y2)
+            # 恢复到 resize 前的 size
+            (x1, y1, x2, y2) = get_real_coordinates(ratio, x1, y1, x2, y2)
 
-            cv2.rectangle(image, (real_x1, real_y1), (real_x2, real_y2),
+            cv2.rectangle(image, (x1, y1), (x2, y2),
                           (int(class_name_color_mapping[class_name][0]), int(class_name_color_mapping[class_name][1]),
                            int(class_name_color_mapping[class_name][2])), 2)
 
             text = '{}: {}'.format(class_name, int(100 * filtered_class_probs[idx]))
-            all_detections.append((class_name, 100 * filtered_class_probs[idx]))
+            logger.info('Detect {} in {} with prob {}'.format(class_name, (x1, y1, x2, y2), filtered_class_probs[idx]))
+            all_detections.append((class_name, 100 * filtered_class_probs[idx], (x1, y1, x2, y2)))
             # size[0][0] 表示 width, size[0][1] 表示 height, size[1] 表示 baseline
             size = cv2.getTextSize(text, cv2.FONT_HERSHEY_COMPLEX, 0.5, 1)
-            text_origin = (real_x1, real_y1 + size[0][1])
+            text_origin = (x1, y1 + size[0][1])
 
             cv2.rectangle(image, (text_origin[0] - 5, text_origin[1] - size[0][1] - 5),
                           (text_origin[0] + size[0][0] + 5, text_origin[1] + 5), (0, 0, 0), 2)
