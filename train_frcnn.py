@@ -167,7 +167,7 @@ losses = np.zeros((num_steps, 5))
 start_time = time.time()
 best_loss = np.Inf
 
-logger.info('Starting training...')
+logger.info('Training starts...')
 for epoch_idx in range(num_epochs):
     progbar = generic_utils.Progbar(num_steps)
     logger.info('Epoch {}/{}'.format(epoch_idx + 1, num_epochs))
